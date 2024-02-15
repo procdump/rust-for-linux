@@ -1,0 +1,13 @@
+# https://github.com/arighi/virtme-ng
+make LLVM=-15 defconfig
+make LLVM=-15 rust.config
+make LLVM=-15 rustavailable # if not ok consult Documentation from output
+make LLVM=-15 -j8 rust-analyzer
+make LLVM=-15 -j8 rustfmtcheck
+make LLVM=-15 -j8 rustdoc
+open Documentation/output/rust/rustdoc/kernel/index.html
+make LLVM=-15 -j8 CLIPPY=1
+make LLVM=-15 -j8 rusttest
+enable KUNIT - and then tests can be run for doctests
+vng -b LLVM=-15
+vng --network user

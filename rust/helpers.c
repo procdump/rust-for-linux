@@ -31,6 +31,9 @@
 #include <linux/spinlock.h>
 #include <linux/wait.h>
 #include <linux/workqueue.h>
+#include <net/net_namespace.h>
+#include <net/net_trackers.h>
+#include <linux/netdevice.h>
 
 __noreturn void rust_helper_BUG(void)
 {
@@ -178,3 +181,21 @@ static_assert(
 	__alignof__(size_t) == __alignof__(uintptr_t),
 	"Rust code expects C `size_t` to match Rust `usize`"
 );
+
+struct net *rust_helper_get_net_track(struct net *net, netns_tracker *tracker, gfp_t gfp)
+{
+	return get_net_track(net, tracker, gfp);
+}
+EXPORT_SYMBOL_GPL(rust_helper_get_net_track);
+
+void rust_helper_put_net_track(struct net *net, netns_tracker *tracker)
+{
+	put_net_track(net, tracker);
+}
+EXPORT_SYMBOL_GPL(rust_helper_put_net_track);
+
+void rust_helper_netdev_put(struct net_device *dev, netdevice_tracker *tracker)
+{
+	return netdev_put(dev, tracker);
+}
+EXPORT_SYMBOL_GPL(rust_helper_netdev_put);
