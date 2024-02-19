@@ -19,8 +19,11 @@
 #include <linux/workqueue.h>
 #include <linux/netdevice.h>
 #include <linux/skbuff.h>
+#include <linux/gfp.h>
+#include <linux/gfp_types.h>
 
 /* `bindgen` gets confused at certain things. */
 const size_t RUST_CONST_HELPER_ARCH_SLAB_MINALIGN = ARCH_SLAB_MINALIGN;
 const gfp_t RUST_CONST_HELPER_GFP_KERNEL = GFP_KERNEL;
+const gfp_t RUST_CONST_HELPER_GFP_ATOMIC = GFP_ATOMIC;
 const gfp_t RUST_CONST_HELPER___GFP_ZERO = __GFP_ZERO;

@@ -9,3 +9,4 @@
 #include <uapi/asm-generic/ioctl.h>
 #include <uapi/linux/mii.h>
 #include <uapi/linux/ethtool.h>
+#include <uapi/linux/if_ether.h>

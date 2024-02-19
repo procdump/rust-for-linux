@@ -199,3 +199,27 @@ void rust_helper_netdev_put(struct net_device *dev, netdevice_tracker *tracker)
 	return netdev_put(dev, tracker);
 }
 EXPORT_SYMBOL_GPL(rust_helper_netdev_put);
+
+int rust_helper_dev_queue_xmit(struct sk_buff *skb)
+{
+	return dev_queue_xmit(skb);
+}
+EXPORT_SYMBOL_GPL(rust_helper_dev_queue_xmit);
+
+void rust_helper_kfree_skb(struct sk_buff *skb)
+{
+	return kfree_skb(skb);
+}
+EXPORT_SYMBOL_GPL(rust_helper_kfree_skb);
+
+void rust_helper_skb_reset_network_header(struct sk_buff *skb)
+{
+	return skb_reset_network_header(skb);
+}
+EXPORT_SYMBOL_GPL(rust_helper_skb_reset_network_header);
+
+void rust_helper_skb_set_dev(struct sk_buff *skb, struct net_device *dev)
+{
+	skb->dev = dev;
+}
+EXPORT_SYMBOL_GPL(rust_helper_skb_set_dev);
