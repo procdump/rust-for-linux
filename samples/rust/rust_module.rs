@@ -175,13 +175,13 @@ impl Container {
     }
 
     pub unsafe extern "C" fn eth_rcv(
-        frame: *mut sk_buff,
+        skb: *mut sk_buff,
         dev_in: *mut net_device,
         packet_type: *mut packet_type,
         orig_dev: *mut net_device,
     ) -> i32 {
-        let frame = unsafe { SkBuffOwned::from_raw(frame) };
-        let pkt_type = frame.get_pkt_type();
+        let skb = unsafe { SkBuffOwned::from_raw(skb) };
+        let pkt_type = skb.get_pkt_type();
 
         // if we don't filter these there's a loop
         if pkt_type == PACKET_LOOPBACK || pkt_type == PACKET_OUTGOING {
@@ -191,7 +191,7 @@ impl Container {
         // pr_info!("Received frame!\n");
         let egress_devs = Container::get_egress_devs(dev_in);
         egress_devs.into_iter().for_each(|dev| {
-            let mut nskb = frame.clone();
+            let mut nskb = skb.clone();
             nskb.set_dev(dev);
             // let dev_out_name = Container::get_dev_name(dev);
             // let dev_in_name = Container::get_dev_name(dev_in);
@@ -226,14 +226,14 @@ impl<'a> SkBuffOwned<'a> {
 
     pub fn dev_queue_xmit(mut self) -> i32 {
         let inner = self.skb.take().unwrap();
-        let frame = inner.get_raw();
-        unsafe { dev_queue_xmit(frame) }
+        let skb = inner.get_raw();
+        unsafe { dev_queue_xmit(skb) }
     }
 
     pub fn netif_rx(mut self) -> i32 {
         let inner = self.skb.take().unwrap();
-        let frame = inner.get_raw();
-        unsafe { netif_rx(frame) }
+        let skb = inner.get_raw();
+        unsafe { netif_rx(skb) }
     }
 }
 
@@ -284,27 +284,23 @@ impl SkBuff {
     }
 
     pub fn undo_skb_pull(&mut self, how_many: usize) {
-        let frame = self.get_raw();
+        let skb = self.get_raw();
         unsafe {
-            (*frame).data = (*frame).data.offset(-(how_many as isize));
-            (*frame).len += how_many as u32;
+            (*skb).data = (*skb).data.offset(-(how_many as isize));
+            (*skb).len += how_many as u32;
         }
     }
 
     pub fn get_pkt_type(&self) -> u32 {
-        let frame = self.get_raw();
+        let skb = self.get_raw();
         unsafe {
-            let pkt_type = (*frame)
-                .__bindgen_anon_5
-                .__bindgen_anon_1
-                .as_ref()
-                .pkt_type() as u32;
+            let pkt_type = (*skb).__bindgen_anon_5.__bindgen_anon_1.as_ref().pkt_type() as u32;
             // let offset = -(ETH_HLEN as isize);
             // pr_info!("pkt_type: {}\n", pkt_type);
             // pr_info!("skb->data: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}\n",
-            //      *((*frame).data.offset(offset+0)), *((*frame).data.offset(offset+1)), *((*frame).data.offset(offset+2)),
-            //      *((*frame).data.offset(offset+3)), *((*frame).data.offset(offset+4)), *((*frame).data.offset(offset+5)),
-            //      *((*frame).data.offset(offset+6)), *((*frame).data.offset(offset+7)));
+            //      *((*skb).data.offset(offset+0)), *((*skb).data.offset(offset+1)), *((*skb).data.offset(offset+2)),
+            //      *((*skb).data.offset(offset+3)), *((*skb).data.offset(offset+4)), *((*skb).data.offset(offset+5)),
+            //      *((*skb).data.offset(offset+6)), *((*skb).data.offset(offset+7)));
 
             pkt_type
         }
@@ -313,16 +309,16 @@ impl SkBuff {
     // for a lifetime of 'a give me a reference to the cloned skb
     pub fn clone<'a, 'b>(&'b self) -> SkBuffOwned<'a> {
         unsafe {
-            let frame = self.get_raw();
-            let nskb = skb_copy(frame, GFP_ATOMIC);
+            let skb = self.get_raw();
+            let nskb = skb_copy(skb, GFP_ATOMIC);
             SkBuffOwned::from_raw(nskb)
         }
     }
 
     pub fn set_dev(&mut self, dev: *mut net_device) {
-        let frame = self.get_raw();
+        let skb = self.get_raw();
         unsafe {
-            (*frame)
+            (*skb)
                 .__bindgen_anon_1
                 .__bindgen_anon_1
                 .__bindgen_anon_1
