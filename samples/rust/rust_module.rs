@@ -180,20 +180,18 @@ impl Container {
         packet_type: *mut packet_type,
         orig_dev: *mut net_device,
     ) -> i32 {
-        let frame = unsafe { SkBuff::from_raw(frame) };
-        unsafe {
-            let pkt_type = frame.get_pkt_type();
-            // if we don't filter these there's a loop
-            if pkt_type == PACKET_LOOPBACK || pkt_type == PACKET_OUTGOING {
-                frame.drop_skb();
-                return 0;
-            }
+        let frame = unsafe { SkBuffOwned::from_raw(frame) };
+        let pkt_type = frame.get_pkt_type();
+
+        // if we don't filter these there's a loop
+        if pkt_type == PACKET_LOOPBACK || pkt_type == PACKET_OUTGOING {
+            return 0;
         }
 
         // pr_info!("Received frame!\n");
         let egress_devs = Container::get_egress_devs(dev_in);
         egress_devs.into_iter().for_each(|dev| {
-            let nskb = frame.clone();
+            let mut nskb = frame.clone();
             nskb.set_dev(dev);
             // let dev_out_name = Container::get_dev_name(dev);
             // let dev_in_name = Container::get_dev_name(dev_in);
@@ -203,11 +201,62 @@ impl Container {
             //     dev_out_name.to_str().unwrap()
             // );
             nskb.undo_skb_pull(ETH_HLEN as usize);
-            nskb.skb_dev_queue_xmit();
+            nskb.dev_queue_xmit();
         });
-        // unsafe { netif_rx(frame) }
-        frame.drop_skb();
         0
+    }
+}
+
+pub struct SkBuffOwned<'a> {
+    skb: Option<&'a mut SkBuff>,
+}
+
+impl<'a> SkBuffOwned<'a> {
+    pub fn new(skb: &'a mut SkBuff) -> Self {
+        Self { skb: Some(skb) }
+    }
+
+    pub unsafe fn from_raw(skb: *mut sk_buff) -> Self {
+        unsafe {
+            Self {
+                skb: Some(SkBuff::from_raw(skb)),
+            }
+        }
+    }
+
+    pub fn dev_queue_xmit(mut self) -> i32 {
+        let inner = self.skb.take().unwrap();
+        let frame = inner.get_raw();
+        unsafe { dev_queue_xmit(frame) }
+    }
+
+    pub fn netif_rx(mut self) -> i32 {
+        let inner = self.skb.take().unwrap();
+        let frame = inner.get_raw();
+        unsafe { netif_rx(frame) }
+    }
+}
+
+impl<'a> Drop for SkBuffOwned<'a> {
+    fn drop(&mut self) {
+        if let Some(inner) = &self.skb {
+            unsafe {
+                kfree_skb(inner.get_raw());
+            }
+        }
+    }
+}
+
+impl<'a> Deref for SkBuffOwned<'a> {
+    type Target = SkBuff;
+    fn deref(&self) -> &Self::Target {
+        self.skb.as_ref().unwrap()
+    }
+}
+
+impl<'a> DerefMut for SkBuffOwned<'a> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.skb.as_mut().unwrap()
     }
 }
 
@@ -261,19 +310,12 @@ impl SkBuff {
         }
     }
 
-    pub fn drop_skb(&mut self) {
-        let frame = self.get_raw();
-        unsafe {
-            kfree_skb(frame);
-        }
-    }
-
     // for a lifetime of 'a give me a reference to the cloned skb
-    pub fn clone<'a, 'b>(&'b self) -> &'a mut SkBuff {
+    pub fn clone<'a, 'b>(&'b self) -> SkBuffOwned<'a> {
         unsafe {
             let frame = self.get_raw();
             let nskb = skb_copy(frame, GFP_ATOMIC);
-            SkBuff::from_raw(nskb)
+            SkBuffOwned::from_raw(nskb)
         }
     }
 
@@ -285,13 +327,6 @@ impl SkBuff {
                 .__bindgen_anon_1
                 .__bindgen_anon_1
                 .dev = dev;
-        }
-    }
-
-    pub fn skb_dev_queue_xmit(&mut self) {
-        let frame = self.get_raw();
-        unsafe {
-            dev_queue_xmit(frame);
         }
     }
 }
