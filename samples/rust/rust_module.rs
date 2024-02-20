@@ -18,7 +18,6 @@ use kernel::bindings::{
 };
 use kernel::prelude::*;
 use kernel::sync::Mutex;
-use kernel::types::Opaque;
 use kernel::uapi::ETH_P_ALL;
 use kernel::{fmt, str::CString};
 
@@ -119,40 +118,36 @@ impl Container {
         pr_info!("Releasing net namespace!\n");
     }
 
-    pub fn new() -> Pin<&'static mut Opaque<Container>> {
+    pub fn new() -> Pin<&'static mut Container> {
         let lock = Arc::pin_init(new_mutex!((), "Container Mutex")).unwrap();
         unsafe { MTX = Some(lock) };
         let _mg = unsafe { MTX.as_mut().unwrap().lock() };
 
         let our_cont = unsafe { &mut CONTAINER };
-        unsafe {
-            (*our_cont.get()).acquire_dev("eth0");
-            (*our_cont.get()).acquire_dev("eth1");
-            (*our_cont.get()).add_packet_type();
-            (*our_cont.get()).stopped = false;
-        }
+        our_cont.acquire_dev("eth0");
+        our_cont.acquire_dev("eth1");
+        our_cont.add_packet_type();
+        our_cont.stopped = false;
 
         let cont = Pin::static_mut(our_cont);
         cont
     }
 
-    pub fn deinit(cont: &mut Pin<&'static mut Opaque<Container>>) {
+    pub fn deinit(cont: &mut Pin<&'static mut Container>) {
         let _mg = unsafe { MTX.as_mut().unwrap().lock() };
 
-        unsafe {
-            (*cont.get()).stopped = true;
-            (*cont.get()).release_dev();
-            (*cont.get()).remove_packet_type();
-        }
+        cont.stopped = true;
+        cont.release_dev();
+        cont.remove_packet_type();
     }
 
     pub fn get_egress_devs(dev_in: *mut net_device) -> Vec<*mut net_device> {
         let mut egress_devs = Vec::new();
         let _mg = unsafe { MTX.as_mut().unwrap().lock() };
-        let stopped = unsafe { (*CONTAINER.get()).stopped };
+        let stopped = unsafe { CONTAINER.stopped };
         if stopped == false {
             unsafe {
-                (*CONTAINER.get()).dev.iter_mut().for_each(|dev| {
+                CONTAINER.dev.iter_mut().for_each(|dev| {
                     if dev_in != *dev {
                         egress_devs.try_push(*dev).unwrap();
                     }
@@ -199,17 +194,17 @@ impl Container {
     }
 }
 
-static mut CONTAINER: Opaque<Container> = Opaque::new(Container {
+static mut CONTAINER: Container = Container {
     net: null_mut(),
     dev: Vec::new(),
     netns_tracker: netns_tracker {},
     netdev_tracker: netdevice_tracker {},
     packet_type: unsafe { MaybeUninit::zeroed().assume_init() },
     stopped: true,
-});
+};
 
 struct RustModule {
-    cont: Pin<&'static mut Opaque<Container>>,
+    cont: Pin<&'static mut Container>,
 }
 
 unsafe impl Sync for RustModule {}
@@ -224,6 +219,7 @@ impl kernel::Module for RustModule {
         pr_info!("Am I built-in? {}\n", !cfg!(MODULE));
 
         let cont = Container::new();
+
         Ok(RustModule { cont })
     }
 }
