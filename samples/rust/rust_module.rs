@@ -1,39 +1,35 @@
 // SPDX-License-Identifier: GPL-2.0
 #![allow(
-    unused_imports,
-    dead_code,
-    unused_variables,
-    unused_unsafe,
-    non_upper_case_globals,
+    // unused_imports,
+    // dead_code,
+    // unused_variables,
+    // unused_unsafe,
+    // non_upper_case_globals,
     missing_docs
 )]
 
-//! Rust minimal sample.
-use core::borrow::BorrowMut;
-use core::cell::UnsafeCell;
-use core::convert::AsMut;
-use core::iter::{IntoIterator, Iterator};
+use core::iter::IntoIterator;
 use core::mem::MaybeUninit;
-use core::ops::{Deref, DerefMut};
 use core::ptr::null_mut;
 use kernel::bindings::{
-    dev_add_pack, dev_queue_xmit, dev_remove_pack, get_net_track, init_net, kfree_skb, net,
-    net_device, netdev_get_by_name, netdev_put, netdevice_tracker, netif_rx, netns_tracker,
-    packet_type, put_net_track, sk_buff, skb_copy, skb_reset_network_header, skb_set_dev, ETH_HLEN,
-    GFP_ATOMIC, GFP_KERNEL, PACKET_LOOPBACK, PACKET_OUTGOING,
+    dev_add_pack, dev_remove_pack, get_net_track, init_net, net, net_device, netdev_get_by_name,
+    netdev_put, netdevice_tracker, netns_tracker, packet_type, put_net_track, sk_buff, ETH_HLEN,
+    GFP_KERNEL, PACKET_LOOPBACK, PACKET_OUTGOING,
 };
-use kernel::c_str;
 use kernel::prelude::*;
-use kernel::sync::{LockClassKey, Mutex};
+use kernel::sync::Mutex;
 use kernel::types::Opaque;
 use kernel::uapi::ETH_P_ALL;
 use kernel::{fmt, str::CString};
 
+mod rust_skb;
+use rust_skb::SkBuffOwned;
+
 module! {
-    type: RustMinimal,
-    name: "rust_minimal",
+    type: RustModule,
+    name: "rust_module",
     author: "Rust for Linux Contributors",
-    description: "Rust minimal sample",
+    description: "Play with rust in the kernel",
     license: "GPL",
 }
 
@@ -106,9 +102,7 @@ impl Container {
             return;
         }
 
-        pr_info!("Acquiring netns_tracker: {:p}\n", unsafe {
-            self.get_netns_tracker()
-        });
+        pr_info!("Acquiring netns_tracker: {:p}\n", self.get_netns_tracker());
         let c_str = unsafe { CStr::from_char_ptr(&(*dev).name as *const [i8; 16] as *const i8) };
         pr_info!("Got a netdev by name: {}\n", c_str.to_str().unwrap());
         self.set_dev(dev);
@@ -120,9 +114,7 @@ impl Container {
         for i in 0..devs_num {
             unsafe { netdev_put(self.dev[i], self.get_netdev_tracker()) };
         }
-        pr_info!("Releasing netns_tracker: {:p}\n", unsafe {
-            self.get_netns_tracker()
-        });
+        pr_info!("Releasing netns_tracker: {:p}\n", self.get_netns_tracker());
         unsafe { put_net_track(self.get_ns(), self.get_netns_tracker()) };
         pr_info!("Releasing net namespace!\n");
     }
@@ -130,7 +122,7 @@ impl Container {
     pub fn new() -> Pin<&'static mut Opaque<Container>> {
         let lock = Arc::pin_init(new_mutex!((), "Container Mutex")).unwrap();
         unsafe { MTX = Some(lock) };
-        let mg = unsafe { MTX.as_mut().unwrap().lock() };
+        let _mg = unsafe { MTX.as_mut().unwrap().lock() };
 
         let our_cont = unsafe { &mut CONTAINER };
         unsafe {
@@ -145,7 +137,7 @@ impl Container {
     }
 
     pub fn deinit(cont: &mut Pin<&'static mut Opaque<Container>>) {
-        let mg = unsafe { MTX.as_mut().unwrap().lock() };
+        let _mg = unsafe { MTX.as_mut().unwrap().lock() };
 
         unsafe {
             (*cont.get()).stopped = true;
@@ -156,7 +148,7 @@ impl Container {
 
     pub fn get_egress_devs(dev_in: *mut net_device) -> Vec<*mut net_device> {
         let mut egress_devs = Vec::new();
-        let mg = unsafe { MTX.as_mut().unwrap().lock() };
+        let _mg = unsafe { MTX.as_mut().unwrap().lock() };
         let stopped = unsafe { (*CONTAINER.get()).stopped };
         if stopped == false {
             unsafe {
@@ -177,8 +169,8 @@ impl Container {
     pub unsafe extern "C" fn eth_rcv(
         skb: *mut sk_buff,
         dev_in: *mut net_device,
-        packet_type: *mut packet_type,
-        orig_dev: *mut net_device,
+        _packet_type: *mut packet_type,
+        _orig_dev: *mut net_device,
     ) -> i32 {
         let skb = unsafe { SkBuffOwned::from_raw(skb) };
         let pkt_type = skb.get_pkt_type();
@@ -207,126 +199,6 @@ impl Container {
     }
 }
 
-pub struct SkBuffOwned<'a> {
-    skb: Option<&'a mut SkBuff>,
-}
-
-impl<'a> SkBuffOwned<'a> {
-    pub fn new(skb: &'a mut SkBuff) -> Self {
-        Self { skb: Some(skb) }
-    }
-
-    pub unsafe fn from_raw(skb: *mut sk_buff) -> Self {
-        unsafe {
-            Self {
-                skb: Some(SkBuff::from_raw(skb)),
-            }
-        }
-    }
-
-    pub fn dev_queue_xmit(mut self) -> i32 {
-        let inner = self.skb.take().unwrap();
-        let skb = inner.get_raw();
-        unsafe { dev_queue_xmit(skb) }
-    }
-
-    pub fn netif_rx(mut self) -> i32 {
-        let inner = self.skb.take().unwrap();
-        let skb = inner.get_raw();
-        unsafe { netif_rx(skb) }
-    }
-}
-
-impl<'a> Drop for SkBuffOwned<'a> {
-    fn drop(&mut self) {
-        if let Some(inner) = &self.skb {
-            unsafe {
-                kfree_skb(inner.get_raw());
-            }
-        }
-    }
-}
-
-impl<'a> Deref for SkBuffOwned<'a> {
-    type Target = SkBuff;
-    fn deref(&self) -> &Self::Target {
-        self.skb.as_ref().unwrap()
-    }
-}
-
-impl<'a> DerefMut for SkBuffOwned<'a> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        self.skb.as_mut().unwrap()
-    }
-}
-
-#[repr(transparent)]
-pub struct SkBuff(Opaque<sk_buff>);
-
-impl SkBuff {
-    /// Creates a new [`SkBuff`] instance from a raw pointer.
-    ///
-    /// # Safety
-    ///
-    /// For the duration of 'a, the pointer must point at a valid `sk_buff`,
-    /// and the caller must be in a context where all methods defined on this struct
-    /// are safe to call.
-    pub unsafe fn from_raw<'a>(ptr: *mut sk_buff) -> &'a mut Self {
-        // CAST: `Self` is a `repr(transparent)` wrapper around `sk_buff`.
-        let ptr = ptr.cast::<Self>();
-        // SAFETY: by the function requirements the pointer is valid and we have unique access for
-        // the duration of `'a`.
-        unsafe { &mut *ptr }
-    }
-
-    pub fn get_raw(&self) -> *mut sk_buff {
-        self.0.get()
-    }
-
-    pub fn undo_skb_pull(&mut self, how_many: usize) {
-        let skb = self.get_raw();
-        unsafe {
-            (*skb).data = (*skb).data.offset(-(how_many as isize));
-            (*skb).len += how_many as u32;
-        }
-    }
-
-    pub fn get_pkt_type(&self) -> u32 {
-        let skb = self.get_raw();
-        unsafe {
-            let pkt_type = (*skb).__bindgen_anon_5.__bindgen_anon_1.as_ref().pkt_type() as u32;
-            // let offset = -(ETH_HLEN as isize);
-            // pr_info!("pkt_type: {}\n", pkt_type);
-            // pr_info!("skb->data: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}\n",
-            //      *((*skb).data.offset(offset+0)), *((*skb).data.offset(offset+1)), *((*skb).data.offset(offset+2)),
-            //      *((*skb).data.offset(offset+3)), *((*skb).data.offset(offset+4)), *((*skb).data.offset(offset+5)),
-            //      *((*skb).data.offset(offset+6)), *((*skb).data.offset(offset+7)));
-
-            pkt_type
-        }
-    }
-
-    // for a lifetime of 'a give me a reference to the cloned skb
-    pub fn clone<'a, 'b>(&'b self) -> SkBuffOwned<'a> {
-        unsafe {
-            let skb = self.get_raw();
-            let nskb = skb_copy(skb, GFP_ATOMIC);
-            SkBuffOwned::from_raw(nskb)
-        }
-    }
-
-    pub fn set_dev(&mut self, dev: *mut net_device) {
-        let skb = self.get_raw();
-        unsafe {
-            (*skb)
-                .__bindgen_anon_1
-                .__bindgen_anon_1
-                .__bindgen_anon_1
-                .dev = dev;
-        }
-    }
-}
-
 static mut CONTAINER: Opaque<Container> = Opaque::new(Container {
     net: null_mut(),
     dev: Vec::new(),
@@ -336,27 +208,27 @@ static mut CONTAINER: Opaque<Container> = Opaque::new(Container {
     stopped: true,
 });
 
-struct RustMinimal {
+struct RustModule {
     cont: Pin<&'static mut Opaque<Container>>,
 }
 
-unsafe impl Sync for RustMinimal {}
+unsafe impl Sync for RustModule {}
 
 use kernel::new_mutex;
 use kernel::sync::Arc;
 static mut MTX: Option<Arc<Mutex<()>>> = None;
 
-impl kernel::Module for RustMinimal {
+impl kernel::Module for RustModule {
     fn init(_module: &'static ThisModule) -> Result<Self> {
         pr_info!("Rust minimal sample (init)\n");
         pr_info!("Am I built-in? {}\n", !cfg!(MODULE));
 
         let cont = Container::new();
-        Ok(RustMinimal { cont })
+        Ok(RustModule { cont })
     }
 }
 
-impl Drop for RustMinimal {
+impl Drop for RustModule {
     fn drop(&mut self) {
         pr_info!("Rust minimal sample (exit)\n");
         Container::deinit(&mut self.cont);
