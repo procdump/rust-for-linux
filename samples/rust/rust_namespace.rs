@@ -29,5 +29,6 @@ impl NetNamespace {
 impl Drop for NetNamespace {
     fn drop(&mut self) {
         unsafe { put_net_track(self.net, (*self.inner).as_mut_ptr()) };
+        pr_info!("NetNamespace dropped\n");
     }
 }
