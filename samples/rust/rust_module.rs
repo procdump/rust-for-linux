@@ -30,35 +30,6 @@ module! {
     license: "GPL",
 }
 
-pub unsafe extern "C" fn eth_rcv(
-    skb: *mut sk_buff,
-    dev_in: *mut net_device,
-    packet_type: *mut packet_type,
-    _orig_dev: *mut net_device,
-) -> i32 {
-    let skb = unsafe { SkBuffOwned::from_raw(skb) };
-    let priv_data: ArcBorrow<'_, Vec<NetDevice>> =
-        unsafe { Arc::borrow((*packet_type).af_packet_priv) };
-
-    let pkt_type = skb.get_pkt_type();
-    // if we don't filter these there's a loop
-    if pkt_type == PACKET_LOOPBACK || pkt_type == PACKET_OUTGOING {
-        return 0;
-    }
-
-    // pr_info!("Received frame!\n");
-    priv_data.iter().for_each(|dev| {
-        let dev = dev.get_dev();
-        if dev != dev_in {
-            let mut nskb = skb.clone();
-            nskb.set_dev(dev);
-            nskb.undo_skb_pull(ETH_HLEN as usize);
-            nskb.dev_queue_xmit();
-        }
-    });
-    0
-}
-
 mod rust_netdevice;
 use rust_netdevice::{NetDevice, PacketType};
 static mut PACKET_TYPE: MaybeUninit<packet_type> = MaybeUninit::zeroed();
@@ -70,6 +41,37 @@ static mut NET_NS_TRACKER: MaybeUninit<netns_tracker> = MaybeUninit::zeroed();
 struct RustModule {
     #[allow(dead_code)]
     packet_type: PacketType<Vec<NetDevice>>,
+}
+
+impl RustModule {
+    pub(crate) unsafe extern "C" fn eth_rcv(
+        skb: *mut sk_buff,
+        dev_in: *mut net_device,
+        packet_type: *mut packet_type,
+        _orig_dev: *mut net_device,
+    ) -> i32 {
+        let skb = unsafe { SkBuffOwned::from_raw(skb) };
+        let priv_data: ArcBorrow<'_, Vec<NetDevice>> =
+            unsafe { Arc::borrow((*packet_type).af_packet_priv) };
+
+        let pkt_type = skb.get_pkt_type();
+        // if we don't filter these there's a loop
+        if pkt_type == PACKET_LOOPBACK || pkt_type == PACKET_OUTGOING {
+            return 0;
+        }
+
+        // pr_info!("Received frame!\n");
+        priv_data.iter().for_each(|dev| {
+            let dev = dev.get_dev();
+            if dev != dev_in {
+                let mut nskb = skb.clone();
+                nskb.set_dev(dev);
+                nskb.undo_skb_pull(ETH_HLEN as usize);
+                nskb.dev_queue_xmit();
+            }
+        });
+        0
+    }
 }
 
 unsafe impl Sync for RustModule {}
@@ -88,8 +90,12 @@ impl kernel::Module for RustModule {
         let mut net_devs = Vec::new();
         net_devs.try_push(eth0).unwrap();
         net_devs.try_push(eth1).unwrap();
-        let packet_type =
-            PacketType::new(unsafe { &mut PACKET_TYPE }, ETH_P_ALL, eth_rcv, net_devs);
+        let packet_type = PacketType::new(
+            unsafe { &mut PACKET_TYPE },
+            ETH_P_ALL,
+            RustModule::eth_rcv,
+            net_devs,
+        );
 
         Ok(RustModule { packet_type })
     }
