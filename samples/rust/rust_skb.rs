@@ -14,6 +14,7 @@ impl<'a> SkBuffOwned<'a> {
         Self { skb: Some(skb) }
     }
 
+    #[allow(dead_code)]
     pub(crate) unsafe fn from_raw(skb: *mut sk_buff) -> Self {
         unsafe {
             Self {
@@ -22,6 +23,7 @@ impl<'a> SkBuffOwned<'a> {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn dev_queue_xmit(mut self) -> i32 {
         let inner = self.skb.take().unwrap();
         let skb = inner.get_raw();
@@ -82,6 +84,7 @@ impl SkBuff {
         self.0.get()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn undo_skb_pull(&mut self, how_many: usize) {
         let skb = self.get_raw();
         unsafe {
@@ -90,6 +93,7 @@ impl SkBuff {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_pkt_type(&self) -> u32 {
         let skb = self.get_raw();
         unsafe {
@@ -105,6 +109,7 @@ impl SkBuff {
         }
     }
 
+    #[allow(dead_code)]
     // for a lifetime of 'a give me a reference to the cloned skb
     pub(crate) fn clone<'a, 'b>(&'b self) -> SkBuffOwned<'a> {
         unsafe {
@@ -114,6 +119,7 @@ impl SkBuff {
         }
     }
 
+    #[allow(dead_code)]
     pub(crate) fn set_dev(&mut self, dev: *mut net_device) {
         let skb = self.get_raw();
         unsafe {
