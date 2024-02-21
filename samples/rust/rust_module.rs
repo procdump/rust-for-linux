@@ -66,7 +66,7 @@ impl RustModule {
             if dev != dev_in {
                 let mut nskb = skb.clone();
                 nskb.set_dev(dev);
-                nskb.undo_skb_pull(ETH_HLEN as usize);
+                nskb.push(ETH_HLEN as usize);
                 nskb.dev_queue_xmit();
             }
         });

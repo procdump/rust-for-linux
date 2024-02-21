@@ -1,6 +1,6 @@
 use core::ops::{Deref, DerefMut};
 use kernel::bindings::{
-    dev_queue_xmit, kfree_skb, net_device, netif_rx, sk_buff, skb_copy, GFP_ATOMIC,
+    dev_queue_xmit, kfree_skb, net_device, netif_rx, sk_buff, skb_copy, skb_push, GFP_ATOMIC,
 };
 use kernel::types::Opaque;
 
@@ -85,11 +85,10 @@ impl SkBuff {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn undo_skb_pull(&mut self, how_many: usize) {
+    pub(crate) fn push(&mut self, how_many: usize) {
         let skb = self.get_raw();
         unsafe {
-            (*skb).data = (*skb).data.offset(-(how_many as isize));
-            (*skb).len += how_many as u32;
+            skb_push(skb, how_many as u32);
         }
     }
 
