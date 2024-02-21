@@ -69,7 +69,7 @@ static mut NET_NS_TRACKER: MaybeUninit<netns_tracker> = MaybeUninit::zeroed();
 
 struct RustModule {
     #[allow(dead_code)]
-    packet_type: PacketType,
+    packet_type: PacketType<Vec<NetDevice>>,
 }
 
 unsafe impl Sync for RustModule {}
@@ -88,10 +88,8 @@ impl kernel::Module for RustModule {
         let mut net_devs = Vec::new();
         net_devs.try_push(eth0).unwrap();
         net_devs.try_push(eth1).unwrap();
-        let a = Arc::try_new(net_devs).unwrap();
-        let priv_data = a.into_foreign();
         let packet_type =
-            PacketType::new(unsafe { &mut PACKET_TYPE }, ETH_P_ALL, eth_rcv, priv_data);
+            PacketType::new(unsafe { &mut PACKET_TYPE }, ETH_P_ALL, eth_rcv, net_devs);
 
         Ok(RustModule { packet_type })
     }
