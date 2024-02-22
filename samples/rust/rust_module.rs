@@ -78,10 +78,10 @@ impl RustModule {
             if it.peek() == None {
                 RustModule::xmit(skb, dev);
                 return 0;
-            } else {
-                let nskb = skb.clone();
-                RustModule::xmit(nskb, dev);
             }
+
+            let nskb = skb.clone();
+            RustModule::xmit(nskb, dev);
         }
         0
     }
