@@ -12,8 +12,7 @@ use core::cell::RefCell;
 use core::clone::Clone;
 use core::mem::MaybeUninit;
 use kernel::bindings::{
-    init_net, net_device, netdevice_tracker, netns_tracker, packet_type, sk_buff, ETH_HLEN,
-    PACKET_LOOPBACK, PACKET_OUTGOING,
+    init_net, net_device, packet_type, sk_buff, ETH_HLEN, PACKET_LOOPBACK, PACKET_OUTGOING,
 };
 use kernel::prelude::*;
 use kernel::sync::lock::mutex::Mutex;
@@ -33,12 +32,10 @@ module! {
 }
 
 mod rust_netdevice;
-use rust_netdevice::{NetDevice, PacketType};
+use rust_netdevice::{NetDevice, NetDeviceTracker, PacketType};
 static mut PACKET_TYPE: MaybeUninit<packet_type> = MaybeUninit::zeroed();
-static mut NETDEV_TRACKER: MaybeUninit<netdevice_tracker> = MaybeUninit::zeroed();
 mod rust_namespace;
-use rust_namespace::NetNamespace;
-static mut NET_NS_TRACKER: MaybeUninit<netns_tracker> = MaybeUninit::zeroed();
+use rust_namespace::{NetNamespace, NetNsTracker};
 
 struct RustModule {
     #[allow(dead_code)]
@@ -98,17 +95,20 @@ struct PrivateData {
     net_devs: Vec<NetDevice>,
 }
 
+const ETH0: &'static str = "eth0";
+const ETH1: &'static str = "eth1";
+
 impl kernel::Module for RustModule {
     fn init(_module: &'static ThisModule) -> Result<Self> {
         pr_info!("Rust minimal sample (init)\n");
         pr_info!("Am I built-in? {}\n", !cfg!(MODULE));
 
-        let net_ns = Arc::try_new(NetNamespace::new(unsafe { &mut init_net }, unsafe {
-            &mut NET_NS_TRACKER
-        }))
-        .unwrap();
-        let eth0 = NetDevice::new(net_ns.clone(), "eth0", unsafe { &mut NETDEV_TRACKER }).unwrap();
-        let eth1 = NetDevice::new(net_ns, "eth1", unsafe { &mut NETDEV_TRACKER }).unwrap();
+        let netns_tracker = Arc::pin_init(NetNsTracker::new()).unwrap();
+        let net_ns =
+            Arc::try_new(NetNamespace::new(unsafe { &mut init_net }, netns_tracker)).unwrap();
+        let netdevice_tracker = Arc::pin_init(NetDeviceTracker::new()).unwrap();
+        let eth0 = NetDevice::new(net_ns.clone(), ETH0, netdevice_tracker.clone()).unwrap();
+        let eth1 = NetDevice::new(net_ns, ETH1, netdevice_tracker).unwrap();
         let mut net_devs = Vec::new();
         net_devs.try_push(eth0).unwrap();
         net_devs.try_push(eth1).unwrap();

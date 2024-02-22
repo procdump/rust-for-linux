@@ -1,4 +1,5 @@
 use core::cell::RefCell;
+use core::cell::UnsafeCell;
 use core::ffi::c_void;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
@@ -72,21 +73,21 @@ pub(crate) struct NetDevice {
     ns: Arc<NetNamespace>,
     #[allow(dead_code)]
     net_device: *mut net_device,
-    netdev_tracker: Pin<&'static mut MaybeUninit<netdevice_tracker>>,
+    netdev_tracker: Arc<NetDeviceTracker>,
 }
 
 impl NetDevice {
     pub(crate) fn new(
         namespace: Arc<NetNamespace>,
         name: &str,
-        netdev_tracker: &'static mut MaybeUninit<netdevice_tracker>,
+        netdev_tracker: Arc<NetDeviceTracker>,
     ) -> Option<Self> {
         let dev_name = CString::try_from_fmt(fmt!("{}", name)).unwrap();
         let dev = unsafe {
             netdev_get_by_name(
                 namespace.get_net(),
                 dev_name.as_char_ptr(),
-                (*netdev_tracker).as_mut_ptr(),
+                netdev_tracker.get_raw(),
                 GFP_KERNEL,
             )
         };
@@ -96,16 +97,13 @@ impl NetDevice {
             return None;
         }
 
-        pr_info!(
-            "Acquiring netns_tracker: {:p}\n",
-            (*netdev_tracker).as_mut_ptr()
-        );
+        pr_info!("Acquiring netdev_tracker: {:p}\n", netdev_tracker.get_raw());
         let c_str = unsafe { CStr::from_char_ptr(&(*dev).name as *const [i8; 16] as *const i8) };
         pr_info!("Got a netdev by name: {}\n", c_str.to_str().unwrap());
         Some(Self {
             ns: namespace,
             net_device: dev,
-            netdev_tracker: Pin::static_mut(netdev_tracker),
+            netdev_tracker,
         })
     }
 
@@ -126,7 +124,27 @@ impl PartialEq for NetDevice {
 
 impl Drop for NetDevice {
     fn drop(&mut self) {
-        unsafe { netdev_put(self.net_device, (*self.netdev_tracker).as_mut_ptr()) };
-        pr_info!("NetDevice dropped\n");
+        pr_info!(
+            "NetDevice dropped, tracker: {:p}\n",
+            self.netdev_tracker.get_raw()
+        );
+        unsafe { netdev_put(self.net_device, self.netdev_tracker.get_raw()) };
+    }
+}
+
+#[pin_data]
+pub struct NetDeviceTracker {
+    #[pin]
+    tracker: UnsafeCell<MaybeUninit<netdevice_tracker>>,
+}
+impl NetDeviceTracker {
+    pub(crate) fn new() -> impl PinInit<Self> {
+        pin_init!(Self {
+            tracker: unsafe { UnsafeCell::new(MaybeUninit::zeroed().assume_init()) }
+        })
+    }
+
+    pub(crate) fn get_raw(&self) -> *mut netdevice_tracker {
+        unsafe { (*self.tracker.get()).as_mut_ptr() }
     }
 }
