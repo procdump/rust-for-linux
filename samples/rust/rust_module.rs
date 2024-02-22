@@ -8,6 +8,7 @@
     missing_docs
 )]
 
+use core::cell::RefCell;
 use core::clone::Clone;
 use core::mem::MaybeUninit;
 use kernel::bindings::{
@@ -15,6 +16,7 @@ use kernel::bindings::{
     PACKET_LOOPBACK, PACKET_OUTGOING,
 };
 use kernel::prelude::*;
+use kernel::sync::lock::mutex::Mutex;
 use kernel::sync::{Arc, ArcBorrow};
 use kernel::types::ForeignOwnable;
 use kernel::uapi::ETH_P_ALL;
@@ -58,7 +60,7 @@ impl RustModule {
         _orig_dev: *mut net_device,
     ) -> i32 {
         let skb = unsafe { SkBuffOwned::from_raw(skb) };
-        let priv_data: ArcBorrow<'_, Vec<NetDevice>> =
+        let priv_data: ArcBorrow<'_, Mutex<RefCell<Vec<NetDevice>>>> =
             unsafe { Arc::borrow((*packet_type).af_packet_priv) };
 
         let pkt_type = skb.get_pkt_type();
@@ -68,7 +70,9 @@ impl RustModule {
         }
 
         // pr_info!("Received frame!\n");
-        let mut it = priv_data
+        let locked = priv_data.lock();
+        let borrowed_mut = locked.borrow_mut();
+        let mut it = borrowed_mut
             .iter()
             .filter(|dev| dev.get_dev() != dev_in)
             .peekable();

@@ -1,3 +1,4 @@
+use core::cell::RefCell;
 use core::ffi::c_void;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
@@ -5,10 +6,11 @@ use kernel::bindings::{
     dev_add_pack, dev_remove_pack, net_device, netdev_get_by_name, netdev_put, netdevice_tracker,
     packet_type, sk_buff, GFP_KERNEL,
 };
-use kernel::prelude::*;
+use kernel::sync::lock::mutex::Mutex;
 use kernel::sync::Arc;
 use kernel::types::ForeignOwnable;
 use kernel::{fmt, str::CString};
+use kernel::{new_mutex, prelude::*};
 
 use crate::rust_namespace::NetNamespace;
 
@@ -38,7 +40,11 @@ impl<T> PacketType<T> {
         unsafe {
             (*(*packet_type).as_mut_ptr()).type_ = ether_type.to_be();
             (*(*packet_type).as_mut_ptr()).func = Some(pkt_handler);
-            let a = Arc::try_new(private).unwrap();
+            let a = Arc::pin_init(new_mutex!(
+                RefCell::new(private),
+                "Wrap the private data in a mutex"
+            ))
+            .unwrap();
             let priv_data = a.into_foreign();
             (*(*packet_type).as_mut_ptr()).af_packet_priv = priv_data as *mut c_void;
             dev_add_pack((*packet_type).as_mut_ptr());
@@ -55,7 +61,7 @@ impl<T> Drop for PacketType<T> {
         unsafe {
             let priv_data = (*(*self.inner).as_mut_ptr()).af_packet_priv;
             dev_remove_pack((*self.inner).as_mut_ptr());
-            let _d: Arc<T> = Arc::from_foreign(priv_data);
+            let _d: Arc<Mutex<RefCell<T>>> = Arc::from_foreign(priv_data);
             pr_info!("PacketType dropped\n");
         }
     }
