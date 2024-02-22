@@ -11,7 +11,7 @@
 use core::cell::RefCell;
 use core::clone::Clone;
 use kernel::bindings::{
-    init_net, net_device, packet_type, sk_buff, ETH_HLEN, PACKET_LOOPBACK, PACKET_OUTGOING,
+    net_device, packet_type, sk_buff, ETH_HLEN, PACKET_LOOPBACK, PACKET_OUTGOING,
 };
 use kernel::prelude::*;
 use kernel::sync::lock::mutex::Mutex;
@@ -102,8 +102,11 @@ impl kernel::Module for RustModule {
         pr_info!("Am I built-in? {}\n", !cfg!(MODULE));
 
         let netns_tracker = Arc::pin_init(NetNsTracker::new()).unwrap();
-        let net_ns =
-            Arc::try_new(NetNamespace::new(unsafe { &mut init_net }, netns_tracker)).unwrap();
+        let net_ns = Arc::try_new(NetNamespace::new(
+            NetNamespace::default_net(),
+            netns_tracker,
+        ))
+        .unwrap();
         let netdevice_tracker = Arc::pin_init(NetDeviceTracker::new()).unwrap();
         let eth0 = NetDevice::new(net_ns.clone(), ETH0, netdevice_tracker.clone()).unwrap();
         let eth1 = NetDevice::new(net_ns, ETH1, netdevice_tracker).unwrap();
