@@ -42,7 +42,7 @@ static mut NET_NS_TRACKER: MaybeUninit<netns_tracker> = MaybeUninit::zeroed();
 
 struct RustModule {
     #[allow(dead_code)]
-    packet_type: PacketType<Vec<NetDevice>>,
+    packet_type: PacketType<PrivateData>,
 }
 
 impl RustModule {
@@ -60,7 +60,7 @@ impl RustModule {
         _orig_dev: *mut net_device,
     ) -> i32 {
         let skb = unsafe { SkBuffOwned::from_raw(skb) };
-        let priv_data: ArcBorrow<'_, Mutex<RefCell<Vec<NetDevice>>>> =
+        let priv_data: ArcBorrow<'_, Mutex<RefCell<PrivateData>>> =
             unsafe { Arc::borrow((*packet_type).af_packet_priv) };
 
         let pkt_type = skb.get_pkt_type();
@@ -73,6 +73,7 @@ impl RustModule {
         let locked = priv_data.lock();
         let borrowed_mut = locked.borrow_mut();
         let mut it = borrowed_mut
+            .net_devs
             .iter()
             .filter(|dev| dev.get_dev() != dev_in)
             .peekable();
@@ -93,6 +94,10 @@ impl RustModule {
 
 unsafe impl Sync for RustModule {}
 
+struct PrivateData {
+    net_devs: Vec<NetDevice>,
+}
+
 impl kernel::Module for RustModule {
     fn init(_module: &'static ThisModule) -> Result<Self> {
         pr_info!("Rust minimal sample (init)\n");
@@ -111,7 +116,7 @@ impl kernel::Module for RustModule {
             unsafe { &mut PACKET_TYPE },
             ETH_P_ALL,
             RustModule::eth_rcv,
-            net_devs,
+            PrivateData { net_devs },
         );
 
         Ok(RustModule { packet_type })
