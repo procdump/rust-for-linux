@@ -10,7 +10,6 @@
 
 use core::cell::RefCell;
 use core::clone::Clone;
-use core::mem::MaybeUninit;
 use kernel::bindings::{
     init_net, net_device, packet_type, sk_buff, ETH_HLEN, PACKET_LOOPBACK, PACKET_OUTGOING,
 };
@@ -33,7 +32,6 @@ module! {
 
 mod rust_netdevice;
 use rust_netdevice::{NetDevice, NetDeviceTracker, PacketType};
-static mut PACKET_TYPE: MaybeUninit<packet_type> = MaybeUninit::zeroed();
 mod rust_namespace;
 use rust_namespace::{NetNamespace, NetNsTracker};
 
@@ -112,12 +110,7 @@ impl kernel::Module for RustModule {
         let mut net_devs = Vec::new();
         net_devs.try_push(eth0).unwrap();
         net_devs.try_push(eth1).unwrap();
-        let packet_type = PacketType::new(
-            unsafe { &mut PACKET_TYPE },
-            ETH_P_ALL,
-            RustModule::eth_rcv,
-            PrivateData { net_devs },
-        );
+        let packet_type = PacketType::new(ETH_P_ALL, RustModule::eth_rcv, PrivateData { net_devs });
 
         Ok(RustModule { packet_type })
     }

@@ -20,13 +20,12 @@ where
     T: 'static,
 {
     #[allow(dead_code)]
-    inner: Pin<&'static mut MaybeUninit<packet_type>>,
+    inner: Pin<Box<PacketTypeInner>>,
     _marker: PhantomData<T>,
 }
 
 impl<T> PacketType<T> {
     pub(crate) fn new(
-        holder: &'static mut MaybeUninit<packet_type>,
         ether_type: u32,
         pkt_handler: unsafe extern "C" fn(
             skb: *mut sk_buff,
@@ -36,19 +35,19 @@ impl<T> PacketType<T> {
         ) -> i32,
         private: T,
     ) -> Self {
-        let mut packet_type = Pin::static_mut(holder);
+        let packet_type = Box::pin_init(PacketTypeInner::new()).unwrap();
         let ether_type = ether_type as u16;
         unsafe {
-            (*(*packet_type).as_mut_ptr()).type_ = ether_type.to_be();
-            (*(*packet_type).as_mut_ptr()).func = Some(pkt_handler);
+            (*(*packet_type).get_raw()).type_ = ether_type.to_be();
+            (*(*packet_type).get_raw()).func = Some(pkt_handler);
             let a = Arc::pin_init(new_mutex!(
                 RefCell::new(private),
                 "Wrap the private data in a mutex"
             ))
             .unwrap();
             let priv_data = a.into_foreign();
-            (*(*packet_type).as_mut_ptr()).af_packet_priv = priv_data as *mut c_void;
-            dev_add_pack((*packet_type).as_mut_ptr());
+            (*(*packet_type).get_raw()).af_packet_priv = priv_data as *mut c_void;
+            dev_add_pack((*packet_type).get_raw());
         }
         Self {
             inner: packet_type,
@@ -60,11 +59,29 @@ impl<T> PacketType<T> {
 impl<T> Drop for PacketType<T> {
     fn drop(&mut self) {
         unsafe {
-            let priv_data = (*(*self.inner).as_mut_ptr()).af_packet_priv;
-            dev_remove_pack((*self.inner).as_mut_ptr());
+            let priv_data = (*(*self.inner).get_raw()).af_packet_priv;
+            dev_remove_pack((*self.inner).get_raw());
             let _d: Arc<Mutex<RefCell<T>>> = Arc::from_foreign(priv_data);
             pr_info!("PacketType dropped\n");
         }
+    }
+}
+
+#[pin_data]
+pub struct PacketTypeInner {
+    #[pin]
+    inner: UnsafeCell<MaybeUninit<packet_type>>,
+}
+
+impl PacketTypeInner {
+    pub(crate) fn new() -> impl PinInit<Self> {
+        pin_init!(Self {
+            inner: unsafe { UnsafeCell::new(MaybeUninit::zeroed().assume_init()) }
+        })
+    }
+
+    pub(crate) fn get_raw(&self) -> *mut packet_type {
+        unsafe { (*self.inner.get()).as_mut_ptr() }
     }
 }
 
