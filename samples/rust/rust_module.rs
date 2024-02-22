@@ -44,6 +44,13 @@ struct RustModule {
 }
 
 impl RustModule {
+    #[inline]
+    fn xmit(mut skb: SkBuffOwned<'_>, dev: &NetDevice) {
+        skb.set_dev(dev.get_dev());
+        skb.push(ETH_HLEN as usize);
+        skb.dev_queue_xmit();
+    }
+
     pub(crate) unsafe extern "C" fn eth_rcv(
         skb: *mut sk_buff,
         dev_in: *mut net_device,
@@ -61,15 +68,21 @@ impl RustModule {
         }
 
         // pr_info!("Received frame!\n");
-        priv_data.iter().for_each(|dev| {
-            let dev = dev.get_dev();
-            if dev != dev_in {
-                let mut nskb = skb.clone();
-                nskb.set_dev(dev);
-                nskb.push(ETH_HLEN as usize);
-                nskb.dev_queue_xmit();
+        let mut it = priv_data
+            .iter()
+            .filter(|dev| dev.get_dev() != dev_in)
+            .peekable();
+        while it.peek() != None {
+            let dev = it.next().unwrap();
+
+            if it.peek() == None {
+                RustModule::xmit(skb, dev);
+                return 0;
+            } else {
+                let nskb = skb.clone();
+                RustModule::xmit(nskb, dev);
             }
-        });
+        }
         0
     }
 }
