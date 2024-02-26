@@ -129,4 +129,51 @@ impl SkBuff {
                 .dev = dev;
         }
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn get_ether_dhost(&self) -> [u8; 6] {
+        let skb = self.get_raw();
+        unsafe {
+            [
+                (*(*skb).data.offset(0)) as u8,
+                (*(*skb).data.offset(1)) as u8,
+                (*(*skb).data.offset(2)) as u8,
+                (*(*skb).data.offset(3)) as u8,
+                (*(*skb).data.offset(4)) as u8,
+                (*(*skb).data.offset(5)) as u8,
+            ]
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get_ether_shost(&self) -> [u8; 6] {
+        let skb = self.get_raw();
+        unsafe {
+            [
+                (*(*skb).data.offset(6)) as u8,
+                (*(*skb).data.offset(7)) as u8,
+                (*(*skb).data.offset(8)) as u8,
+                (*(*skb).data.offset(9)) as u8,
+                (*(*skb).data.offset(10)) as u8,
+                (*(*skb).data.offset(11)) as u8,
+            ]
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn is_ether_broadcast(&self) -> bool {
+        let ether_dhost = self.get_ether_dhost();
+        ether_dhost[0] == 0xff
+            && ether_dhost[1] == 0xff
+            && ether_dhost[2] == 0xff
+            && ether_dhost[3] == 0xff
+            && ether_dhost[4] == 0xff
+            && ether_dhost[5] == 0xff
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn is_ether_multicast(&self) -> bool {
+        let ether_dhost = self.get_ether_dhost();
+        ether_dhost[0] & 0x01 == 0x01 && !self.is_ether_broadcast()
+    }
 }
