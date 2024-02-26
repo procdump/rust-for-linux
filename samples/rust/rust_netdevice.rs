@@ -2,7 +2,6 @@ use core::cell::RefCell;
 use core::cell::UnsafeCell;
 use core::clone::Clone;
 use core::ffi::c_void;
-use core::marker::PhantomData;
 use core::mem::MaybeUninit;
 use kernel::bindings::{
     dev_add_pack, dev_remove_pack, net_device, netdev_get_by_name, netdev_put, netdevice_tracker,
@@ -23,7 +22,6 @@ where
     #[allow(dead_code)]
     inner: Pin<Box<PacketTypeInner>>,
     private: Arc<Mutex<RefCell<T>>>,
-    _marker: PhantomData<T>,
 }
 
 impl<T> PacketType<T> {
@@ -53,7 +51,6 @@ impl<T> PacketType<T> {
             Self {
                 inner: packet_type,
                 private: a,
-                _marker: PhantomData,
             }
         }
     }
