@@ -1,5 +1,6 @@
 use core::cell::RefCell;
 use core::cell::UnsafeCell;
+use core::clone::Clone;
 use core::ffi::c_void;
 use core::marker::PhantomData;
 use core::mem::MaybeUninit;
@@ -21,6 +22,7 @@ where
 {
     #[allow(dead_code)]
     inner: Pin<Box<PacketTypeInner>>,
+    private: Arc<Mutex<RefCell<T>>>,
     _marker: PhantomData<T>,
 }
 
@@ -45,14 +47,20 @@ impl<T> PacketType<T> {
                 "Wrap the private data in a mutex"
             ))
             .unwrap();
-            let priv_data = a.into_foreign();
+            let priv_data = a.clone().into_foreign();
             (*(*packet_type).get_raw()).af_packet_priv = priv_data as *mut c_void;
             dev_add_pack((*packet_type).get_raw());
+            Self {
+                inner: packet_type,
+                private: a,
+                _marker: PhantomData,
+            }
         }
-        Self {
-            inner: packet_type,
-            _marker: PhantomData,
-        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get_private(&self) -> Arc<Mutex<RefCell<T>>> {
+        self.private.clone()
     }
 }
 

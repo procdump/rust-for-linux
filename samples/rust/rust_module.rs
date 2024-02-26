@@ -190,6 +190,8 @@ impl kernel::Module for RustModule {
             PrivateData { net_devs, fdb },
         );
 
+        let _priv_data = packet_type.get_private();
+
         Ok(RustModule { packet_type })
     }
 }
