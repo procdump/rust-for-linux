@@ -71,6 +71,30 @@ impl RustModule {
         0
     }
 
+    #[allow(dead_code)]
+    pub(crate) fn expire(private: Arc<Mutex<RefCell<PrivateData>>>, force: bool) {
+        let locked = private.lock();
+        let mut priv_data = locked.borrow_mut();
+        let mut cursor = priv_data.fdb.cursor_front();
+        while let Some(c) = cursor {
+            let (_mac, mac_entry) = c.current();
+            if force == true || mac_entry.is_expired() == true {
+                // pr_info!(
+                //     "Remove MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}\n",
+                //     mac[0],
+                //     mac[1],
+                //     mac[2],
+                //     mac[3],
+                //     mac[4],
+                //     mac[5]
+                // );
+                cursor = c.remove_current();
+                continue;
+            }
+            cursor = c.move_next();
+        }
+    }
+
     pub(crate) unsafe extern "C" fn eth_rcv(
         skb: *mut sk_buff,
         dev_in: *mut net_device,
@@ -97,6 +121,10 @@ impl RustModule {
             let mut priv_data = locked.borrow_mut();
             RustModule::flood(&mut *priv_data, skb, dev_in)
         } else {
+            // TODO: do the expiry here but should be on a workqueue
+            let arc = Arc::from(priv_data);
+            RustModule::expire(arc, false);
+
             let ether_dhost = skb.get_ether_dhost();
             let ether_shost = skb.get_ether_shost();
 
@@ -125,9 +153,10 @@ impl RustModule {
                     *mac_entry = mac_en;
                 }
                 None => {
-                    // TODO: expiry? fdb size limit?
-                    // pr_info!("Insert ether shost into fdb\n");
-                    let _ = priv_data.fdb.try_create_and_insert(ether_shost, mac_en);
+                    if priv_data.fdb.iter().count() < MAX_FDB_ENTRIES {
+                        // pr_info!("Insert ether shost into fdb\n");
+                        let _ = priv_data.fdb.try_create_and_insert(ether_shost, mac_en);
+                    }
                 }
             }
 
@@ -180,12 +209,19 @@ impl MacEntry {
     pub(crate) fn get_expires_in(&self) -> Jiffies {
         self.expires_in
     }
+
+    #[allow(dead_code)]
+    pub(crate) fn is_expired(&self) -> bool {
+        let now = unsafe { jiffies };
+        self.expires_in as i64 - now as i64 <= 0
+    }
 }
 
-const HUB_MODE: bool = true;
+const HUB_MODE: bool = false;
 const ETH0: &'static str = "eth0";
 const ETH1: &'static str = "eth1";
 const MAX_AGE_MSEC: u32 = 180 * 1000;
+const MAX_FDB_ENTRIES: usize = 2048;
 
 impl kernel::Module for RustModule {
     fn init(_module: &'static ThisModule) -> Result<Self> {
@@ -213,8 +249,6 @@ impl kernel::Module for RustModule {
             RustModule::eth_rcv,
             PrivateData { net_devs, fdb },
         );
-
-        let _priv_data = packet_type.get_private();
 
         Ok(RustModule { packet_type })
     }
