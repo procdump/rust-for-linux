@@ -11,12 +11,13 @@
 use core::cell::RefCell;
 use core::clone::Clone;
 use kernel::bindings::{
-    net_device, packet_type, sk_buff, ETH_HLEN, PACKET_LOOPBACK, PACKET_OUTGOING,
+    jiffies, net_device, packet_type, sk_buff, ETH_HLEN, PACKET_LOOPBACK, PACKET_OUTGOING,
 };
 use kernel::prelude::*;
 use kernel::rbtree::RBTree;
 use kernel::sync::lock::mutex::Mutex;
 use kernel::sync::{Arc, ArcBorrow};
+use kernel::time::{msecs_to_jiffies, Jiffies};
 use kernel::types::ForeignOwnable;
 use kernel::uapi::ETH_P_ALL;
 
@@ -115,21 +116,18 @@ impl RustModule {
             let dev_rcvd = dev_rcvd.unwrap();
 
             // update fdb first
+            let mac_en = MacEntry::new(dev_rcvd.clone(), msecs_to_jiffies(MAX_AGE_MSEC));
             let found = priv_data.fdb.get_mut(&ether_shost);
             match found {
-                Some(d) => {
-                    if d.get_dev() != dev_in {
-                        // pr_info!("Update dev_rcvd!\n");
-                        *d = dev_rcvd.clone()
-                    }
-                    // TODO: update timer
+                Some(mac_entry) => {
+                    // dev_in might have changed
+                    // pr_info!("Update dev_rcvd!\n");
+                    *mac_entry = mac_en;
                 }
                 None => {
                     // TODO: expiry? fdb size limit?
                     // pr_info!("Insert ether shost into fdb\n");
-                    let _ = priv_data
-                        .fdb
-                        .try_create_and_insert(ether_shost, dev_rcvd.clone());
+                    let _ = priv_data.fdb.try_create_and_insert(ether_shost, mac_en);
                 }
             }
 
@@ -156,12 +154,38 @@ unsafe impl Sync for RustModule {}
 struct PrivateData {
     net_devs: Vec<Arc<NetDevice>>,
     #[allow(dead_code)]
-    fdb: RBTree<[u8; 6], Arc<NetDevice>>,
+    fdb: RBTree<[u8; 6], MacEntry>,
+}
+
+struct MacEntry {
+    dev: Arc<NetDevice>,
+    #[allow(dead_code)]
+    expires_in: Jiffies,
+}
+
+impl MacEntry {
+    pub(crate) fn new(dev: Arc<NetDevice>, expires_in: Jiffies) -> Self {
+        let now = unsafe { jiffies };
+        let expires_in = now + expires_in;
+        // pr_info!("Now {}, new jiffies: {}\n", now, expires_in);
+        Self { dev, expires_in }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get_dev(&self) -> *mut net_device {
+        self.dev.get_dev()
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn get_expires_in(&self) -> Jiffies {
+        self.expires_in
+    }
 }
 
 const HUB_MODE: bool = true;
 const ETH0: &'static str = "eth0";
 const ETH1: &'static str = "eth1";
+const MAX_AGE_MSEC: u32 = 180 * 1000;
 
 impl kernel::Module for RustModule {
     fn init(_module: &'static ThisModule) -> Result<Self> {
