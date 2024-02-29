@@ -11,7 +11,8 @@
 use core::cell::RefCell;
 use core::clone::Clone;
 use kernel::bindings::{
-    jiffies, net_device, packet_type, sk_buff, ETH_HLEN, PACKET_LOOPBACK, PACKET_OUTGOING,
+    jiffies, net_device, packet_type, schedule_timeout, set_current_state, sk_buff, ETH_HLEN,
+    PACKET_LOOPBACK, PACKET_OUTGOING, TASK_INTERRUPTIBLE,
 };
 use kernel::prelude::*;
 use kernel::rbtree::RBTree;
@@ -20,6 +21,7 @@ use kernel::sync::{Arc, ArcBorrow};
 use kernel::time::{msecs_to_jiffies, Jiffies};
 use kernel::types::ForeignOwnable;
 use kernel::uapi::ETH_P_ALL;
+use kernel::workqueue::{self, impl_has_work, new_work, Work, WorkItem};
 
 mod rust_skb;
 use rust_skb::SkBuffOwned;
@@ -122,8 +124,8 @@ impl RustModule {
             RustModule::flood(&mut *priv_data, skb, dev_in)
         } else {
             // TODO: do the expiry here but should be on a workqueue
-            let arc = Arc::from(priv_data);
-            RustModule::expire(arc, false);
+            // let arc = Arc::from(priv_data);
+            // RustModule::expire(arc, false);
 
             let ether_dhost = skb.get_ether_dhost();
             let ether_shost = skb.get_ether_shost();
@@ -180,6 +182,44 @@ impl RustModule {
 
 unsafe impl Sync for RustModule {}
 
+unsafe impl Sync for PrivateDataWorkQueueWrapper {}
+unsafe impl Send for PrivateDataWorkQueueWrapper {}
+
+#[pin_data]
+struct PrivateDataWorkQueueWrapper {
+    priv_data: Arc<Mutex<RefCell<PrivateData>>>,
+    #[pin]
+    work: Work<PrivateDataWorkQueueWrapper>,
+}
+
+impl_has_work! {
+    impl HasWork<Self> for PrivateDataWorkQueueWrapper { self.work }
+}
+
+impl PrivateDataWorkQueueWrapper {
+    fn new(priv_data: Arc<Mutex<RefCell<PrivateData>>>) -> Result<Arc<Self>> {
+        Arc::pin_init(pin_init!(PrivateDataWorkQueueWrapper {
+            priv_data,
+            work <- new_work!("PrivateData::work"),
+        }))
+    }
+}
+
+impl WorkItem for PrivateDataWorkQueueWrapper {
+    type Pointer = Arc<PrivateDataWorkQueueWrapper>;
+
+    fn run(this: Arc<PrivateDataWorkQueueWrapper>) {
+        // pr_info!("Queued expiry!\n");
+        RustModule::expire(this.priv_data.clone(), false);
+        let delay = msecs_to_jiffies(MAC_EXPIRY_CHECK_TIMEOUT_MSEC);
+        unsafe {
+            set_current_state(TASK_INTERRUPTIBLE);
+            schedule_timeout(delay as i64);
+        }
+        let _ = workqueue::system_unbound().enqueue(this);
+    }
+}
+
 struct PrivateData {
     net_devs: Vec<Arc<NetDevice>>,
     #[allow(dead_code)]
@@ -222,6 +262,7 @@ const ETH0: &'static str = "eth0";
 const ETH1: &'static str = "eth1";
 const MAX_AGE_MSEC: u32 = 180 * 1000;
 const MAX_FDB_ENTRIES: usize = 2048;
+const MAC_EXPIRY_CHECK_TIMEOUT_MSEC: u32 = 1000;
 
 impl kernel::Module for RustModule {
     fn init(_module: &'static ThisModule) -> Result<Self> {
@@ -249,6 +290,10 @@ impl kernel::Module for RustModule {
             RustModule::eth_rcv,
             PrivateData { net_devs, fdb },
         );
+
+        let priv_data = packet_type.get_private();
+        let priv_data_queue_wrapper = PrivateDataWorkQueueWrapper::new(priv_data).unwrap();
+        let _ = workqueue::system_unbound().enqueue(priv_data_queue_wrapper);
 
         Ok(RustModule { packet_type })
     }

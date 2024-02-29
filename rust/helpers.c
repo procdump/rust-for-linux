@@ -230,3 +230,9 @@ void rust_helper_skb_set_dev(struct sk_buff *skb, struct net_device *dev)
 	skb->dev = dev;
 }
 EXPORT_SYMBOL_GPL(rust_helper_skb_set_dev);
+
+void rust_helper_set_current_state(u32 state)
+{
+	set_current_state(state);
+}
+EXPORT_SYMBOL_GPL(rust_helper_set_current_state);
