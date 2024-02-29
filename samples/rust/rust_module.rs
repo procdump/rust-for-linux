@@ -10,6 +10,7 @@
 
 use core::cell::RefCell;
 use core::clone::Clone;
+use core::sync::atomic::{AtomicBool, Ordering};
 use kernel::bindings::{
     jiffies, net_device, packet_type, schedule_timeout, set_current_state, sk_buff, ETH_HLEN,
     PACKET_LOOPBACK, PACKET_OUTGOING, TASK_INTERRUPTIBLE,
@@ -45,6 +46,14 @@ struct RustModule {
 }
 
 impl RustModule {
+    #[inline]
+    fn delay(delay: i64) {
+        unsafe {
+            set_current_state(TASK_INTERRUPTIBLE);
+            schedule_timeout(delay);
+        }
+    }
+
     #[inline]
     fn xmit(mut skb: SkBuffOwned<'_>, dev: &NetDevice) {
         skb.set_dev(dev.get_dev());
@@ -209,14 +218,28 @@ impl WorkItem for PrivateDataWorkQueueWrapper {
     type Pointer = Arc<PrivateDataWorkQueueWrapper>;
 
     fn run(this: Arc<PrivateDataWorkQueueWrapper>) {
-        // pr_info!("Queued expiry!\n");
-        RustModule::expire(this.priv_data.clone(), false);
-        let delay = msecs_to_jiffies(MAC_EXPIRY_CHECK_TIMEOUT_MSEC);
-        unsafe {
-            set_current_state(TASK_INTERRUPTIBLE);
-            schedule_timeout(delay as i64);
+        // pr_info!("WorkQueue\n");
+        if this
+            .priv_data
+            .lock()
+            .borrow()
+            .exiting
+            .load(Ordering::Relaxed)
+            == false
+        {
+            // pr_info!("Queued expiry!\n");
+            RustModule::expire(this.priv_data.clone(), false);
+            let delay = msecs_to_jiffies(MAC_EXPIRY_CHECK_TIMEOUT_MSEC);
+            RustModule::delay(delay as i64);
+            let _ = workqueue::system_unbound().enqueue(this);
+        } else {
+            this.priv_data
+                .lock()
+                .borrow_mut()
+                .stopped
+                .store(true, Ordering::Relaxed);
+            pr_info!("Expiry queue stopped!\n");
         }
-        let _ = workqueue::system_unbound().enqueue(this);
     }
 }
 
@@ -224,6 +247,8 @@ struct PrivateData {
     net_devs: Vec<Arc<NetDevice>>,
     #[allow(dead_code)]
     fdb: RBTree<[u8; 6], MacEntry>,
+    exiting: AtomicBool,
+    stopped: AtomicBool,
 }
 
 struct MacEntry {
@@ -288,7 +313,12 @@ impl kernel::Module for RustModule {
         let packet_type = PacketType::new(
             ETH_P_ALL,
             RustModule::eth_rcv,
-            PrivateData { net_devs, fdb },
+            PrivateData {
+                net_devs,
+                fdb,
+                exiting: AtomicBool::new(false),
+                stopped: AtomicBool::new(false),
+            },
         );
 
         let priv_data = packet_type.get_private();
@@ -301,6 +331,24 @@ impl kernel::Module for RustModule {
 
 impl Drop for RustModule {
     fn drop(&mut self) {
+        self.packet_type
+            .get_private()
+            .lock()
+            .borrow_mut()
+            .exiting
+            .store(true, Ordering::Relaxed);
+        while self
+            .packet_type
+            .get_private()
+            .lock()
+            .borrow_mut()
+            .stopped
+            .load(Ordering::Relaxed)
+            == false
+        {
+            let delay = msecs_to_jiffies(1000);
+            RustModule::delay(delay as i64);
+        }
         pr_info!("Rust minimal sample (exit)\n");
     }
 }
