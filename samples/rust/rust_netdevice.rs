@@ -1,4 +1,3 @@
-use core::cell::RefCell;
 use core::cell::UnsafeCell;
 use core::clone::Clone;
 use core::ffi::c_void;
@@ -21,7 +20,7 @@ where
 {
     #[allow(dead_code)]
     inner: Pin<Box<PacketTypeInner>>,
-    private: Arc<Mutex<RefCell<T>>>,
+    private: Arc<Mutex<T>>,
 }
 
 impl<T> PacketType<T> {
@@ -40,11 +39,7 @@ impl<T> PacketType<T> {
         unsafe {
             (*(*packet_type).get_raw()).type_ = ether_type.to_be();
             (*(*packet_type).get_raw()).func = Some(pkt_handler);
-            let a = Arc::pin_init(new_mutex!(
-                RefCell::new(private),
-                "Wrap the private data in a mutex"
-            ))
-            .unwrap();
+            let a = Arc::pin_init(new_mutex!(private, "Wrap the private data in a mutex")).unwrap();
             let priv_data = a.clone().into_foreign();
             (*(*packet_type).get_raw()).af_packet_priv = priv_data as *mut c_void;
             dev_add_pack((*packet_type).get_raw());
@@ -56,7 +51,7 @@ impl<T> PacketType<T> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn get_private(&self) -> Arc<Mutex<RefCell<T>>> {
+    pub(crate) fn get_private(&self) -> Arc<Mutex<T>> {
         self.private.clone()
     }
 }
@@ -66,7 +61,7 @@ impl<T> Drop for PacketType<T> {
         unsafe {
             let priv_data = (*(*self.inner).get_raw()).af_packet_priv;
             dev_remove_pack((*self.inner).get_raw());
-            let _d: Arc<Mutex<RefCell<T>>> = Arc::from_foreign(priv_data);
+            let _d: Arc<Mutex<T>> = Arc::from_foreign(priv_data);
             pr_info!("PacketType dropped\n");
         }
     }

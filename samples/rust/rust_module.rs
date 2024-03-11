@@ -8,7 +8,6 @@
     missing_docs
 )]
 
-use core::cell::RefCell;
 use core::clone::Clone;
 use core::sync::atomic::{AtomicBool, Ordering};
 use kernel::bindings::{
@@ -83,9 +82,8 @@ impl RustModule {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn expire(private: Arc<Mutex<RefCell<PrivateData>>>, force: bool) {
-        let locked = private.lock();
-        let mut priv_data = locked.borrow_mut();
+    pub(crate) fn expire(private: Arc<Mutex<PrivateData>>, force: bool) {
+        let mut priv_data = private.lock();
         let mut cursor = priv_data.fdb.cursor_front();
         while let Some(c) = cursor {
             let (_mac, mac_entry) = c.current();
@@ -113,7 +111,7 @@ impl RustModule {
         _orig_dev: *mut net_device,
     ) -> i32 {
         let mut skb = unsafe { SkBuffOwned::from_raw(skb) };
-        let priv_data: ArcBorrow<'_, Mutex<RefCell<PrivateData>>> =
+        let priv_data: ArcBorrow<'_, Mutex<PrivateData>> =
             unsafe { Arc::borrow((*packet_type).af_packet_priv) };
 
         let pkt_type = skb.get_pkt_type();
@@ -128,8 +126,7 @@ impl RustModule {
         // check if broadcast or multicast
         if HUB_MODE == true || skb.is_ether_broadcast() || skb.is_ether_multicast() {
             // pr_info!("HUB/broadcast or multicast -> FLOOD frame\n");
-            let locked = priv_data.lock();
-            let mut priv_data = locked.borrow_mut();
+            let mut priv_data = priv_data.lock();
             RustModule::flood(&mut *priv_data, skb, dev_in)
         } else {
             // TODO: do the expiry here but should be on a workqueue
@@ -139,8 +136,7 @@ impl RustModule {
             let ether_dhost = skb.get_ether_dhost();
             let ether_shost = skb.get_ether_shost();
 
-            let locked = priv_data.lock();
-            let mut priv_data = locked.borrow_mut();
+            let mut priv_data = priv_data.lock();
             let dev_rcvd = priv_data
                 .net_devs
                 .iter()
@@ -196,7 +192,7 @@ unsafe impl Send for PrivateDataWorkQueueWrapper {}
 
 #[pin_data]
 struct PrivateDataWorkQueueWrapper {
-    priv_data: Arc<Mutex<RefCell<PrivateData>>>,
+    priv_data: Arc<Mutex<PrivateData>>,
     #[pin]
     work: Work<PrivateDataWorkQueueWrapper>,
 }
@@ -206,7 +202,7 @@ impl_has_work! {
 }
 
 impl PrivateDataWorkQueueWrapper {
-    fn new(priv_data: Arc<Mutex<RefCell<PrivateData>>>) -> Result<Arc<Self>> {
+    fn new(priv_data: Arc<Mutex<PrivateData>>) -> Result<Arc<Self>> {
         Arc::pin_init(pin_init!(PrivateDataWorkQueueWrapper {
             priv_data,
             work <- new_work!("PrivateData::work"),
@@ -219,25 +215,14 @@ impl WorkItem for PrivateDataWorkQueueWrapper {
 
     fn run(this: Arc<PrivateDataWorkQueueWrapper>) {
         // pr_info!("WorkQueue\n");
-        if this
-            .priv_data
-            .lock()
-            .borrow()
-            .exiting
-            .load(Ordering::Relaxed)
-            == false
-        {
+        if this.priv_data.lock().exiting.load(Ordering::Relaxed) == false {
             // pr_info!("Queued expiry!\n");
             RustModule::expire(this.priv_data.clone(), false);
             let delay = msecs_to_jiffies(MAC_EXPIRY_CHECK_TIMEOUT_MSEC);
             RustModule::delay(delay as i64);
             let _ = workqueue::system_unbound().enqueue(this);
         } else {
-            this.priv_data
-                .lock()
-                .borrow_mut()
-                .stopped
-                .store(true, Ordering::Relaxed);
+            this.priv_data.lock().stopped.store(true, Ordering::Relaxed);
             pr_info!("Expiry queue stopped!\n");
         }
     }
@@ -334,14 +319,12 @@ impl Drop for RustModule {
         self.packet_type
             .get_private()
             .lock()
-            .borrow_mut()
             .exiting
             .store(true, Ordering::Relaxed);
         while self
             .packet_type
             .get_private()
             .lock()
-            .borrow_mut()
             .stopped
             .load(Ordering::Relaxed)
             == false
