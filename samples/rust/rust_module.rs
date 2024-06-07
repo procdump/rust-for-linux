@@ -16,7 +16,7 @@ use kernel::bindings::{
 };
 use kernel::prelude::*;
 use kernel::rbtree::RBTree;
-use kernel::sync::lock::mutex::Mutex;
+use kernel::sync::lock::spinlock::SpinLock;
 use kernel::sync::{Arc, ArcBorrow};
 use kernel::time::{msecs_to_jiffies, Jiffies};
 use kernel::types::ForeignOwnable;
@@ -75,14 +75,15 @@ impl RustModule {
                 return 0;
             }
 
-            let nskb = skb.clone();
-            RustModule::xmit(nskb, dev);
+            if let Ok(nskb) = skb.clone() {
+                RustModule::xmit(nskb, dev);
+            }
         }
         0
     }
 
     #[allow(dead_code)]
-    pub(crate) fn expire(private: Arc<Mutex<PrivateData>>, force: bool) {
+    pub(crate) fn expire(private: Arc<SpinLock<PrivateData>>, force: bool) {
         let mut priv_data = private.lock();
         let mut cursor = priv_data.fdb.cursor_front();
         while let Some(c) = cursor {
@@ -111,7 +112,7 @@ impl RustModule {
         _orig_dev: *mut net_device,
     ) -> i32 {
         let mut skb = unsafe { SkBuffOwned::from_raw(skb) };
-        let priv_data: ArcBorrow<'_, Mutex<PrivateData>> =
+        let priv_data: ArcBorrow<'_, SpinLock<PrivateData>> =
             unsafe { Arc::borrow((*packet_type).af_packet_priv) };
 
         let pkt_type = skb.get_pkt_type();
@@ -192,7 +193,7 @@ unsafe impl Send for PrivateDataWorkQueueWrapper {}
 
 #[pin_data]
 struct PrivateDataWorkQueueWrapper {
-    priv_data: Arc<Mutex<PrivateData>>,
+    priv_data: Arc<SpinLock<PrivateData>>,
     #[pin]
     work: Work<PrivateDataWorkQueueWrapper>,
 }
@@ -202,7 +203,7 @@ impl_has_work! {
 }
 
 impl PrivateDataWorkQueueWrapper {
-    fn new(priv_data: Arc<Mutex<PrivateData>>) -> Result<Arc<Self>> {
+    fn new(priv_data: Arc<SpinLock<PrivateData>>) -> Result<Arc<Self>> {
         Arc::pin_init(pin_init!(PrivateDataWorkQueueWrapper {
             priv_data,
             work <- new_work!("PrivateData::work"),

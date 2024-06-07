@@ -1,7 +1,10 @@
 use core::ops::{Deref, DerefMut};
+use core::result::Result::Err;
 use kernel::bindings::{
     dev_queue_xmit, kfree_skb, net_device, netif_rx, sk_buff, skb_copy, skb_push, GFP_ATOMIC,
 };
+use kernel::error::code;
+use kernel::prelude::*;
 use kernel::types::Opaque;
 
 pub(crate) struct SkBuffOwned<'a> {
@@ -110,11 +113,14 @@ impl SkBuff {
 
     #[allow(dead_code)]
     // for a lifetime of 'a give me a reference to the cloned skb
-    pub(crate) fn clone<'a, 'b>(&'b self) -> SkBuffOwned<'a> {
+    pub(crate) fn clone<'a, 'b>(&'b self) -> Result<SkBuffOwned<'a>> {
         unsafe {
             let skb = self.get_raw();
             let nskb = skb_copy(skb, GFP_ATOMIC);
-            SkBuffOwned::from_raw(nskb)
+            if nskb.is_null() {
+                return Err(code::ENOMEM);
+            }
+            Ok(SkBuffOwned::from_raw(nskb))
         }
     }
 

@@ -1,6 +1,8 @@
 use core::cell::UnsafeCell;
 use core::mem::MaybeUninit;
-use kernel::bindings::{get_net_track, init_net, net, netns_tracker, put_net_track, GFP_KERNEL};
+use kernel::bindings::{
+    get_net_track, init_net, net, netns_tracker, put_net_track, GFP_ATOMIC, GFP_KERNEL,
+};
 use kernel::prelude::*;
 use kernel::sync::Arc;
 
@@ -18,7 +20,7 @@ impl NetNamespace {
 
     pub(crate) fn new(namespace: *mut net, tracker: Arc<NetNsTracker>) -> Self {
         pr_info!("Acquiring netns_tracker: {:p}\n", tracker.get_raw());
-        let net = unsafe { get_net_track(namespace, tracker.get_raw(), GFP_KERNEL) };
+        let net = unsafe { get_net_track(namespace, tracker.get_raw(), GFP_KERNEL | GFP_ATOMIC) };
         Self { net, tracker }
     }
 

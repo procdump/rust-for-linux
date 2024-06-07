@@ -4,13 +4,13 @@ use core::ffi::c_void;
 use core::mem::MaybeUninit;
 use kernel::bindings::{
     dev_add_pack, dev_remove_pack, net_device, netdev_get_by_name, netdev_put, netdevice_tracker,
-    packet_type, sk_buff, GFP_KERNEL,
+    packet_type, sk_buff, GFP_ATOMIC, GFP_KERNEL,
 };
-use kernel::sync::lock::mutex::Mutex;
+use kernel::sync::lock::spinlock::SpinLock;
 use kernel::sync::Arc;
 use kernel::types::ForeignOwnable;
 use kernel::{fmt, str::CString};
-use kernel::{new_mutex, prelude::*};
+use kernel::{new_spinlock, prelude::*};
 
 use crate::rust_namespace::NetNamespace;
 
@@ -20,7 +20,7 @@ where
 {
     #[allow(dead_code)]
     inner: Pin<Box<PacketTypeInner>>,
-    private: Arc<Mutex<T>>,
+    private: Arc<SpinLock<T>>,
 }
 
 impl<T> PacketType<T> {
@@ -39,7 +39,11 @@ impl<T> PacketType<T> {
         unsafe {
             (*(*packet_type).get_raw()).type_ = ether_type.to_be();
             (*(*packet_type).get_raw()).func = Some(pkt_handler);
-            let a = Arc::pin_init(new_mutex!(private, "Wrap the private data in a mutex")).unwrap();
+            let a = Arc::pin_init(new_spinlock!(
+                private,
+                "Wrap the private data in a spinlock"
+            ))
+            .unwrap();
             let priv_data = a.clone().into_foreign();
             (*(*packet_type).get_raw()).af_packet_priv = priv_data as *mut c_void;
             dev_add_pack((*packet_type).get_raw());
@@ -51,7 +55,7 @@ impl<T> PacketType<T> {
     }
 
     #[allow(dead_code)]
-    pub(crate) fn get_private(&self) -> Arc<Mutex<T>> {
+    pub(crate) fn get_private(&self) -> Arc<SpinLock<T>> {
         self.private.clone()
     }
 }
@@ -61,7 +65,7 @@ impl<T> Drop for PacketType<T> {
         unsafe {
             let priv_data = (*(*self.inner).get_raw()).af_packet_priv;
             dev_remove_pack((*self.inner).get_raw());
-            let _d: Arc<Mutex<T>> = Arc::from_foreign(priv_data);
+            let _d: Arc<SpinLock<T>> = Arc::from_foreign(priv_data);
             pr_info!("PacketType dropped\n");
         }
     }
@@ -105,7 +109,7 @@ impl NetDevice {
                 namespace.get_net(),
                 dev_name.as_char_ptr(),
                 netdev_tracker.get_raw(),
-                GFP_KERNEL,
+                GFP_KERNEL | GFP_ATOMIC,
             )
         };
 
