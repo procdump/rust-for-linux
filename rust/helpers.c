@@ -34,6 +34,7 @@
 #include <net/net_namespace.h>
 #include <net/net_trackers.h>
 #include <linux/netdevice.h>
+#include <linux/preempt.h>
 
 __noreturn void rust_helper_BUG(void)
 {
@@ -236,3 +237,21 @@ void rust_helper_set_current_state(u32 state)
 	set_current_state(state);
 }
 EXPORT_SYMBOL_GPL(rust_helper_set_current_state);
+
+int rust_helper_in_interrupt(void)
+{
+	return in_interrupt();
+}
+EXPORT_SYMBOL_GPL(rust_helper_in_interrupt);
+
+int rust_helper_in_task(void)
+{
+	return in_task();
+}
+EXPORT_SYMBOL_GPL(rust_helper_in_task);
+
+int rust_helper_in_softirq(void)
+{
+	return in_softirq();
+}
+EXPORT_SYMBOL_GPL(rust_helper_in_softirq);
