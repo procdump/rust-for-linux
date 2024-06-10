@@ -11,8 +11,8 @@
 use core::clone::Clone;
 use core::sync::atomic::{AtomicBool, Ordering};
 use kernel::bindings::{
-    jiffies, net_device, packet_type, schedule_timeout, set_current_state, sk_buff, ETH_HLEN,
-    PACKET_LOOPBACK, PACKET_OUTGOING, TASK_INTERRUPTIBLE,
+    in_interrupt, in_softirq, in_task, jiffies, net_device, packet_type, schedule_timeout,
+    set_current_state, sk_buff, ETH_HLEN, PACKET_LOOPBACK, PACKET_OUTGOING, TASK_INTERRUPTIBLE,
 };
 use kernel::prelude::*;
 use kernel::rbtree::RBTree;
@@ -121,7 +121,16 @@ impl RustModule {
             return 0;
         }
 
-        // pr_info!("Received frame!\n");
+        unsafe {
+            pr_info!(
+                "{}:{}: in_interrupt: {}, in_softirq: {}, in_task: {}\n",
+                file!(),
+                line!(),
+                in_interrupt(),
+                in_softirq(),
+                in_task()
+            );
+        }
 
         skb.push(ETH_HLEN as usize);
         // check if broadcast or multicast
@@ -270,7 +279,7 @@ impl MacEntry {
 
 const HUB_MODE: bool = false;
 const ETH0: &'static str = "eth0";
-const ETH1: &'static str = "eth1";
+// const ETH1: &'static str = "eth1";
 const MAX_AGE_MSEC: u32 = 180 * 1000;
 const MAX_FDB_ENTRIES: usize = 2048;
 const MAC_EXPIRY_CHECK_TIMEOUT_MSEC: u32 = 1000;
@@ -279,6 +288,17 @@ impl kernel::Module for RustModule {
     fn init(_module: &'static ThisModule) -> Result<Self> {
         pr_info!("Rust minimal sample (init)\n");
         pr_info!("Am I built-in? {}\n", !cfg!(MODULE));
+
+        unsafe {
+            pr_info!(
+                "{}:{}: in_interrupt: {}, in_softirq: {}, in_task: {}\n",
+                file!(),
+                line!(),
+                in_interrupt(),
+                in_softirq(),
+                in_task()
+            );
+        }
 
         let netns_tracker = Arc::pin_init(NetNsTracker::new()).unwrap();
         let net_ns = Arc::try_new(NetNamespace::new(
@@ -290,10 +310,10 @@ impl kernel::Module for RustModule {
         let eth0 =
             Arc::try_new(NetDevice::new(net_ns.clone(), ETH0, netdevice_tracker.clone()).unwrap())
                 .unwrap();
-        let eth1 = Arc::try_new(NetDevice::new(net_ns, ETH1, netdevice_tracker).unwrap()).unwrap();
+        // let eth1 = Arc::try_new(NetDevice::new(net_ns, ETH1, netdevice_tracker).unwrap()).unwrap();
         let mut net_devs = Vec::new();
         net_devs.try_push(eth0).unwrap();
-        net_devs.try_push(eth1).unwrap();
+        // net_devs.try_push(eth1).unwrap();
 
         let fdb = RBTree::new();
         let packet_type = PacketType::new(
@@ -317,6 +337,17 @@ impl kernel::Module for RustModule {
 
 impl Drop for RustModule {
     fn drop(&mut self) {
+        unsafe {
+            pr_info!(
+                "{}:{}: in_interrupt: {}, in_softirq: {}, in_task: {}\n",
+                file!(),
+                line!(),
+                in_interrupt(),
+                in_softirq(),
+                in_task()
+            );
+        }
+
         self.packet_type
             .get_private()
             .lock()
