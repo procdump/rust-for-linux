@@ -13,10 +13,10 @@ use crate::{
 };
 use core::ptr;
 
-/// Wraps the kernel's `struct net_namespace`. Thread safe.
+/// Wraps the kernel's `struct net`. Thread safe.
 ///
-/// This structure represents the Rust abstraction for a C `struct net_namespace`. This
-/// implementation abstracts the usage of an already existing C `struct net_namespace` within Rust
+/// This structure represents the Rust abstraction for a C `struct net`. This
+/// implementation abstracts the usage of an already existing C `struct net` within Rust
 /// code that we get passed from the C side.
 #[repr(transparent)]
 pub struct NetNamespace {
