@@ -7,6 +7,7 @@
 use crate::{
     bindings,
     ffi::{c_int, c_long, c_uint},
+    net_namespace::NetNamespace,
     pid_namespace::PidNamespace,
     types::{ARef, NotThreadSafe, Opaque},
 };
@@ -44,6 +45,16 @@ macro_rules! current_pid_ns {
         // SAFETY: Deref + addr-of below create a temporary `PidNamespaceRef` that cannot outlive
         // the caller.
         unsafe { &*$crate::task::Task::current_pid_ns() }
+    };
+}
+
+/// Returns the currently running task's net namespace.
+#[macro_export]
+macro_rules! current_net_ns {
+    () => {
+        // SAFETY: Deref + addr-of below create a temporary `NetNamespaceRef` that cannot outlive
+        // the caller.
+        unsafe { &*$crate::task::Task::current_net_ns() }
     };
 }
 
@@ -247,6 +258,44 @@ impl Task {
         }
     }
 
+    /// Returns a NetNamespace reference for the currently executing task's/thread's net namespace.
+    ///
+    /// This function can be used to create an unbounded lifetime by e.g., storing the returned
+    /// NetNamespace in a global variable which would be a bug. So the recommended way to get the
+    /// current task's/thread's net namespace is to use the [`current_net_ns`] macro because it is
+    /// safe.
+    ///
+    /// # Safety
+    ///
+    /// Callers must ensure that the returned object doesn't outlive the current task/thread.
+    pub unsafe fn current_net_ns() -> impl Deref<Target = NetNamespace> {
+        struct NetNamespaceRef<'a> {
+            task: &'a NetNamespace,
+            _not_send: NotThreadSafe,
+        }
+
+        impl Deref for NetNamespaceRef<'_> {
+            type Target = NetNamespace;
+
+            fn deref(&self) -> &Self::Target {
+                self.task
+            }
+        }
+
+        // The lifetime of `NetNamespace` is bound to `Task` and `struct net`.
+        // SAFETY: The current task's net namespace is valid as long as the current task is running.
+        let netns = unsafe { bindings::task_net_ns(Task::current_raw()) };
+        NetNamespaceRef {
+            // SAFETY: If the current thread is still running, the current task and its associated
+            // net namespace are valid. `NetNamespaceRef` is not `Send`, so we know it cannot be
+            // transferred to another thread (where it could potentially outlive the current
+            // `Task`). The caller needs to ensure that the NetNamespaceRef doesn't outlive the
+            // current task/thread.
+            task: unsafe { NetNamespace::from_ptr(netns) },
+            _not_send: NotThreadSafe,
+        }
+    }
+
     /// Returns a raw pointer to the task.
     #[inline]
     pub fn as_ptr(&self) -> *mut bindings::task_struct {
@@ -301,6 +350,20 @@ impl Task {
             // reference count via `task_get_pid_ns()`.
             // CAST: `Self` is a `repr(transparent)` wrapper around `bindings::pid_namespace`.
             Some(unsafe { ARef::from_raw(ptr::NonNull::new_unchecked(ptr.cast::<PidNamespace>())) })
+        }
+    }
+
+    /// Returns task's net namespace with elevated reference count
+    pub fn get_net_ns(&self) -> Option<ARef<NetNamespace>> {
+        // SAFETY: By the type invariant, we know that `self.0` is valid.
+        let ptr = unsafe { bindings::task_get_net_ns(self.as_ptr()) };
+        if ptr.is_null() {
+            None
+        } else {
+            // SAFETY: `ptr` is valid by the safety requirements of this function. And we own a
+            // reference count via `task_get_net_ns()`.
+            // CAST: `Self` is a `repr(transparent)` wrapper around `bindings::net`.
+            Some(unsafe { ARef::from_raw(ptr::NonNull::new_unchecked(ptr.cast::<NetNamespace>())) })
         }
     }
 
