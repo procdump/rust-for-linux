@@ -49,14 +49,14 @@ unsafe impl AlwaysRefCounted for NetNamespace {
     fn inc_ref(&self) {
         pr_info!("Incrementing ref to netnamespace!");
         // SAFETY: The existence of a shared reference means that the refcount is nonzero.
-        unsafe { bindings::get_net_ns(self.as_ptr()) };
+        unsafe { bindings::get_net_namespace(self.as_ptr()) };
     }
 
     #[inline]
     unsafe fn dec_ref(obj: ptr::NonNull<NetNamespace>) {
         pr_info!("Decrementing ref to netnamespace!");
         // SAFETY: The safety requirements guarantee that the refcount is non-zero.
-        unsafe { bindings::put_net_ns(obj.cast().as_ptr()) }
+        unsafe { bindings::put_net_namespace(obj.cast().as_ptr()) }
     }
 }
 

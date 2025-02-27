@@ -3,12 +3,12 @@
 #include <linux/nsproxy.h>
 #include <net/net_namespace.h>
 
-struct net *rust_helper_get_net_ns(struct net *ns)
+struct net *rust_helper_get_net_namespace(struct net *ns)
 {
 	return get_net(ns);
 }
 
-void rust_helper_put_net_ns(struct net *ns)
+void rust_helper_put_net_namespace(struct net *ns)
 {
 	put_net(ns);
 }
