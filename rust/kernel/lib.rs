@@ -59,6 +59,9 @@ pub mod list;
 pub mod miscdevice;
 #[cfg(CONFIG_NET)]
 pub mod net;
+#[cfg(CONFIG_NET)]
+pub mod net_device;
+#[cfg(CONFIG_NET)]
 pub mod net_namespace;
 pub mod of;
 pub mod page;
