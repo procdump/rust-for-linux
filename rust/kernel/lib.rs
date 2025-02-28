@@ -64,6 +64,8 @@ pub mod net_device;
 #[cfg(CONFIG_NET)]
 pub mod net_namespace;
 pub mod of;
+#[cfg(CONFIG_NET)]
+pub mod packet_type;
 pub mod page;
 #[cfg(CONFIG_PCI)]
 pub mod pci;
