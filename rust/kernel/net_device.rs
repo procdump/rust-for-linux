@@ -9,10 +9,8 @@
 
 use crate::{
     bindings,
-    error::Result,
     net_namespace::NetNamespace,
     pr_info,
-    prelude::{EINVAL, ENODEV},
     str::CStr,
     types::{ARef, AlwaysRefCounted, Opaque},
 };
@@ -62,14 +60,10 @@ impl NetDevice {
     }
 
     /// Get the name of this net device.
-    pub fn name(&self) -> Result<&CStr> {
+    pub fn name(&self) -> &CStr {
         let ptr = self.inner.get();
-        if ptr.is_null() {
-            Err(ENODEV)
-        } else {
-            // SAFETY: Provided that the ptr isn't null assume its validity.
-            Ok(unsafe { CStr::from_char_ptr((*ptr).name.as_ptr()) })
-        }
+        // SAFETY: ptr is a valid pointer to a `struct net_device`.
+        unsafe { CStr::from_char_ptr((*ptr).name.as_ptr()) }
     }
 }
 

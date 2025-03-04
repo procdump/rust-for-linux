@@ -83,11 +83,16 @@ impl Drop for RustPlay {
 }
 
 unsafe extern "C" fn eth_rcv(
-    _skb: *mut sk_buff,
+    skb: *mut sk_buff,
     dev_in: *mut net_device,
     packet_type: *mut packet_type,
     orig_dev: *mut net_device,
 ) -> i32 {
+    assert!(!skb.is_null());
+    assert!(!dev_in.is_null());
+    assert!(!packet_type.is_null());
+    assert!(!orig_dev.is_null());
+
     let dev_in = unsafe { NetDevice::from_ptr(dev_in) };
     let orig_dev = unsafe { NetDevice::from_ptr(orig_dev) };
     let private_data: Pin<&PacketTypePrivateData> =
@@ -105,8 +110,8 @@ fn eth_rcv_wrapper(
     private_data: Pin<&PacketTypePrivateData>,
     orig_dev: &NetDevice,
 ) -> Result<i32> {
-    let orig_dev_name = orig_dev.name()?.to_str()?;
-    let dev_in_name = dev_in.name()?.to_str()?;
+    let orig_dev_name = orig_dev.name().to_str()?;
+    let dev_in_name = dev_in.name().to_str()?;
     pr_info!(
         "orig_dev_name: {}, dev_in_name: {}\n",
         orig_dev_name,
@@ -115,7 +120,7 @@ fn eth_rcv_wrapper(
 
     let priv_inner = private_data.data.lock();
     for dev in &priv_inner._devs {
-        let db_dev_name = dev.name()?.to_str()?;
+        let db_dev_name = dev.name().to_str()?;
         if orig_dev_name == db_dev_name {
             pr_info!(
                 "Got a packet from a net device in our DB -> {}\n",
