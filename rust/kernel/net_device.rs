@@ -9,8 +9,10 @@
 
 use crate::{
     bindings,
+    error::Result,
     net_namespace::NetNamespace,
     pr_info,
+    prelude::{EINVAL, ENODEV},
     str::CStr,
     types::{ARef, AlwaysRefCounted, Opaque},
 };
@@ -56,6 +58,17 @@ impl NetDevice {
             // reference count via `dev_get_by_name()`.
             // CAST: `Self` is a `repr(transparent)` wrapper around `bindings::net_device`.
             Some(unsafe { ARef::from_raw(ptr::NonNull::new_unchecked(ptr.cast::<NetDevice>())) })
+        }
+    }
+
+    /// Get the name of this net device.
+    pub fn name(&self) -> Result<&CStr> {
+        let ptr = self.inner.get();
+        if ptr.is_null() {
+            Err(ENODEV)
+        } else {
+            // SAFETY: Provided that the ptr isn't null assume its validity.
+            Ok(unsafe { CStr::from_char_ptr((*ptr).name.as_ptr()) })
         }
     }
 }
