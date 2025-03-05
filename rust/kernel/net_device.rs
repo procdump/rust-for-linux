@@ -2,10 +2,9 @@
 
 // Copyright (c) 2025 Boris Astardzhiev <boris.astardzhiev@gmail.com>
 
-//! Net namespaces.
+//! Net devices.
 //!
-//! C header: [`include/net/net_namespace.h`](srctree/include/net/net_namespace.h) and
-//! [`include/linux/nsproxy.h`](srctree/include/linux/nsproxy.h)
+//! C header: [`include/linux/net_device.h`](srctree/include/linux/net_device.h)
 
 use crate::{
     bindings,
