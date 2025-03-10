@@ -8,6 +8,7 @@
 
 use crate::{
     // bindings, pr_info,
+    net_device::NetDevice,
     prelude::EINVAL,
     types::{ARef, AlwaysRefCounted, Opaque},
 };
@@ -45,8 +46,9 @@ impl<'a> SkBuff<'a> {
     }
 
     #[allow(dead_code)]
-    /// Get packet type of this `sk_buff`.
+    /// Get the packet type of this `sk_buff`.
     pub fn get_pkt_type(&self) -> Result<PacketType> {
+        // SAFETY: Since the inner pointer is valid grab the packet type.
         let pkt_type = unsafe {
             (*self.inner.get())
                 .__bindgen_anon_4
@@ -62,6 +64,32 @@ impl<'a> SkBuff<'a> {
             bindings::PACKET_OUTGOING => Ok(PacketType::Outgoing),
             bindings::PACKET_LOOPBACK => Ok(PacketType::Loopback),
             _ => Err(EINVAL),
+        }
+    }
+
+    /// Get the network device in this `sk_buff`.
+    pub fn get_dev<'b>(&'a self) -> Option<ARef<NetDevice>> {
+        let skb = self.as_ptr();
+        // SAFETY: Try to make a `NetDevice` out of the raw pointer in the `sk_buff`.
+        NetDevice::from_raw(unsafe {
+            (*skb)
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .dev
+        })
+    }
+
+    /// Set the network device in this `sk_buff`.
+    pub fn set_dev(&self, dev: &NetDevice) {
+        let skb = self.as_ptr();
+        // SAFETY: Since the inner pointer is valid set the passed device.
+        unsafe {
+            (*skb)
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .__bindgen_anon_1
+                .dev = dev.as_ptr();
         }
     }
 }

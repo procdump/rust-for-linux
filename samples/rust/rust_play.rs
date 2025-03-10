@@ -115,6 +115,14 @@ fn eth_rcv_wrapper(
     let pkt_type = skb.get_pkt_type()?;
 
     pr_info!("pkt_type: {:?}\n", pkt_type);
+    match skb.get_dev() {
+        None => {
+            pr_info!("Missing dev in sk_buff!\n");
+        }
+        Some(dev) => {
+            pr_info!("skb->dev: {}\n", dev.name())
+        }
+    }
     // Filter these.
     if pkt_type == kernel::sk_buff::PacketType::Loopback
         || pkt_type == kernel::sk_buff::PacketType::Outgoing

@@ -10,6 +10,7 @@ use crate::{
     bindings,
     net_namespace::NetNamespace,
     pr_info,
+    sk_buff::SkBuff,
     str::CStr,
     types::{ARef, AlwaysRefCounted, Opaque},
 };
@@ -44,18 +45,25 @@ impl NetDevice {
         unsafe { &*ptr.cast() }
     }
 
-    /// Try to grab a [`NetDevice`] in a namespace.
-    pub fn get_by_name(ns: &NetNamespace, name: &CStr) -> Option<ARef<NetDevice>> {
-        // SAFETY: It's safe to call `get_net_device_by_name` as long as we have a namespace and a name.
-        let ptr = unsafe { bindings::get_net_device_by_name(ns.as_ptr(), name.as_char_ptr()) };
+    /// Try to grab a [`NetDevice`] from a raw pointer.
+    pub fn from_raw(ptr: *const bindings::net_device) -> Option<ARef<NetDevice>> {
         if ptr.is_null() {
             None
         } else {
             // SAFETY: `ptr` is valid by the safety requirements of this function. And we own a
-            // reference count via `dev_get_by_name()`.
+            // reference count.
             // CAST: `Self` is a `repr(transparent)` wrapper around `bindings::net_device`.
-            Some(unsafe { ARef::from_raw(ptr::NonNull::new_unchecked(ptr.cast::<NetDevice>())) })
+            Some(unsafe {
+                ARef::from_raw(ptr::NonNull::new_unchecked(ptr.cast::<NetDevice>() as _))
+            })
         }
+    }
+
+    /// Try to grab a [`NetDevice`] in a namespace.
+    pub fn get_by_name(ns: &NetNamespace, name: &CStr) -> Option<ARef<NetDevice>> {
+        // SAFETY: It's safe to call `get_net_device_by_name` as long as we have a namespace and a name.
+        let ptr = unsafe { bindings::get_net_device_by_name(ns.as_ptr(), name.as_char_ptr()) };
+        NetDevice::from_raw(ptr)
     }
 
     /// Get the name of this net device.
@@ -63,6 +71,22 @@ impl NetDevice {
         let ptr = self.inner.get();
         // SAFETY: ptr is a valid pointer to a `struct net_device`.
         unsafe { CStr::from_char_ptr((*ptr).name.as_ptr()) }
+    }
+
+    /// Transmit a frame out of this network device.
+    pub fn dev_queue_xmit(&mut self, sk_buff: ARef<SkBuff<'_>>) {
+        sk_buff.set_dev(self);
+        unsafe {
+            bindings::dev_queue_xmit(sk_buff.as_ptr());
+        }
+    }
+
+    /// Pass a frame up the stack as if it has come from this network device.
+    pub fn netif_rx(&mut self, sk_buff: ARef<SkBuff<'_>>) {
+        sk_buff.set_dev(self);
+        unsafe {
+            bindings::netif_rx(sk_buff.as_ptr());
+        }
     }
 }
 
