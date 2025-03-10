@@ -6,6 +6,7 @@ use kernel::alloc::allocator::Kmalloc;
 use kernel::bindings::ETH_P_ALL;
 use kernel::bindings::{net_device, packet_type, sk_buff};
 use kernel::new_spinlock;
+use kernel::sk_buff::SkBuff;
 use kernel::sync::SpinLock;
 use kernel::{
     c_str, current_net_ns, net_device::NetDevice, packet_type::PacketType, prelude::*,
@@ -93,23 +94,34 @@ unsafe extern "C" fn eth_rcv(
     assert!(!packet_type.is_null());
     assert!(!orig_dev.is_null());
 
+    let skb = unsafe { SkBuff::from_ptr(skb) };
     let dev_in = unsafe { NetDevice::from_ptr(dev_in) };
     let orig_dev = unsafe { NetDevice::from_ptr(orig_dev) };
     let private_data: Pin<&PacketTypePrivateData> =
         unsafe { PacketType::<Pin<KBox<PacketTypePrivateData>>>::borrow_private(packet_type) };
 
-    match eth_rcv_wrapper(dev_in, private_data, orig_dev) {
+    match eth_rcv_wrapper(skb, dev_in, private_data, orig_dev) {
         Err(e) => e.to_errno(),
         Ok(res) => res,
     }
 }
 
 fn eth_rcv_wrapper(
-    // skb: TODO
+    skb: ARef<SkBuff<'_>>,
     dev_in: &NetDevice,
     private_data: Pin<&PacketTypePrivateData>,
     orig_dev: &NetDevice,
 ) -> Result<i32> {
+    let pkt_type = skb.get_pkt_type()?;
+
+    pr_info!("pkt_type: {:?}\n", pkt_type);
+    // Filter these.
+    if pkt_type == kernel::sk_buff::PacketType::Loopback
+        || pkt_type == kernel::sk_buff::PacketType::Outgoing
+    {
+        return Ok(kernel::bindings::NET_RX_DROP as i32);
+    }
+
     let orig_dev_name = orig_dev.name().to_str()?;
     let dev_in_name = dev_in.name().to_str()?;
     pr_info!(
@@ -128,5 +140,5 @@ fn eth_rcv_wrapper(
             );
         }
     }
-    Ok(0)
+    Ok(kernel::bindings::NET_RX_DROP as i32)
 }
