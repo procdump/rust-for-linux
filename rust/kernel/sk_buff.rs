@@ -22,7 +22,7 @@ use kernel::error::Result;
 #[repr(transparent)]
 pub struct SkBuff<'a> {
     inner: Opaque<bindings::sk_buff>,
-    marker: PhantomData<&'a ()>,
+    _marker: PhantomData<&'a ()>,
 }
 
 impl<'a> SkBuff<'a> {
