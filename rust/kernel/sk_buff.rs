@@ -68,7 +68,7 @@ impl<'a> SkBuff<'a> {
     }
 
     /// Get the network device in this `sk_buff`.
-    pub fn get_dev<'b>(&'a self) -> Option<ARef<NetDevice>> {
+    pub fn get_dev(&self) -> Option<ARef<NetDevice>> {
         let skb = self.as_ptr();
         // SAFETY: Try to make a `NetDevice` out of the raw pointer in the `sk_buff`.
         NetDevice::from_raw(unsafe {
