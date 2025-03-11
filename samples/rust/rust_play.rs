@@ -130,6 +130,7 @@ fn eth_rcv_wrapper(
         return Ok(kernel::bindings::NET_RX_DROP as i32);
     }
 
+    let _dup = skb.dup(GFP_ATOMIC)?;
     let orig_dev_name = orig_dev.name().to_str()?;
     let dev_in_name = dev_in.name().to_str()?;
     pr_info!(

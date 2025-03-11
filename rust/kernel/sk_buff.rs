@@ -8,8 +8,9 @@
 
 use crate::{
     // bindings, pr_info,
+    alloc::Flags,
     net_device::NetDevice,
-    prelude::EINVAL,
+    prelude::{EINVAL, ENOMEM},
     types::{ARef, AlwaysRefCounted, Opaque},
 };
 use core::{marker::PhantomData, ptr};
@@ -90,6 +91,20 @@ impl<'a> SkBuff<'a> {
                 .__bindgen_anon_1
                 .__bindgen_anon_1
                 .dev = dev.as_ptr();
+        }
+    }
+
+    #[allow(dead_code)]
+    /// Create a duplicate of this `sk_buff`.
+    pub fn dup<'b>(&'a self, flags: Flags) -> Result<ARef<SkBuff<'b>>> {
+        let ptr = self.as_ptr();
+        unsafe {
+            // SAFETY: The safety requirement insures that ptr is valid.
+            let nptr = bindings::skb_copy(ptr, flags.as_raw());
+            if nptr.is_null() {
+                return Err(ENOMEM);
+            }
+            Ok(SkBuff::from_ptr(nptr))
         }
     }
 }
