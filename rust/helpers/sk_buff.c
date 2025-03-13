@@ -11,3 +11,8 @@ struct sk_buff *rust_helper_skb_get(struct sk_buff *skb)
 {
 	return skb_get(skb);
 }
+
+unsigned int rust_helper_skb_headlen(const struct sk_buff *skb)
+{
+	return skb_headlen(skb);
+}

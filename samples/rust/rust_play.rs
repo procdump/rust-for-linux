@@ -131,6 +131,9 @@ fn eth_rcv_wrapper(
     }
 
     let _dup = skb.dup(GFP_ATOMIC)?;
+    let _data = _dup.head_data();
+    pr_info!("data: {:02x?}\n", _data);
+
     let orig_dev_name = orig_dev.name().to_str()?;
     let dev_in_name = dev_in.name().to_str()?;
     pr_info!(

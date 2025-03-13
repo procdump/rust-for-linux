@@ -107,6 +107,19 @@ impl<'a> SkBuff<'a> {
             Ok(SkBuff::from_ptr(nptr))
         }
     }
+
+    #[allow(dead_code)]
+    /// Returns the remaining data in the buffer's first segment.
+    pub fn head_data(&'a self) -> &'a [u8] {
+        // SAFETY: The existence of a shared reference means that the refcount is nonzero.
+        let headlen = unsafe { bindings::skb_headlen(self.as_ptr()) };
+        let len = headlen.try_into().unwrap_or(0);
+        // SAFETY: The existence of a shared reference means `self.inner` is valid.
+        let data = unsafe { core::ptr::addr_of!((*self.as_ptr()).data).read() };
+        // SAFETY: The `struct sk_buff` conventions guarantee that at least `skb_headlen(skb)` bytes
+        // are valid from `skb->data`.
+        unsafe { core::slice::from_raw_parts(data, len) }
+    }
 }
 
 #[derive(Debug, PartialEq)]
