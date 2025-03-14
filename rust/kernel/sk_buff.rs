@@ -95,12 +95,26 @@ impl<'a> SkBuff<'a> {
     }
 
     #[allow(dead_code)]
-    /// Create a duplicate of this `sk_buff`.
-    pub fn dup<'b>(&'a self, flags: Flags) -> Result<ARef<SkBuff<'b>>> {
+    /// Create a deep clone of this `sk_buff`.
+    pub fn deep_clone<'b>(&'a self, flags: Flags) -> Result<ARef<SkBuff<'b>>> {
         let ptr = self.as_ptr();
         unsafe {
             // SAFETY: The safety requirement insures that ptr is valid.
             let nptr = bindings::skb_copy(ptr, flags.as_raw());
+            if nptr.is_null() {
+                return Err(ENOMEM);
+            }
+            Ok(SkBuff::from_ptr(nptr))
+        }
+    }
+
+    #[allow(dead_code)]
+    /// Create a shallow clone of this `sk_buff`.
+    pub fn shallow_clone(&'a self, flags: Flags) -> Result<ARef<SkBuff<'a>>> {
+        let ptr = self.as_ptr();
+        unsafe {
+            // SAFETY: The safety requirement insures that ptr is valid.
+            let nptr = bindings::skb_clone(ptr, flags.as_raw());
             if nptr.is_null() {
                 return Err(ENOMEM);
             }
