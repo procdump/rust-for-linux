@@ -49,7 +49,7 @@
 //!
 //! impl Foo {
 //!     fn setup(self: Pin<&mut Self>) {
-//!         pr_info!("Setting up foo");
+//!         pr_info!("Setting up foo\n");
 //!     }
 //! }
 //!

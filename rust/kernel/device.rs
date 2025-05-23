@@ -209,12 +209,38 @@ unsafe impl Send for Device {}
 // synchronization in `struct device`.
 unsafe impl Sync for Device {}
 
+/// Marker trait for the context of a bus specific device.
+///
+/// Some functions of a bus specific device should only be called from a certain context, i.e. bus
+/// callbacks, such as `probe()`.
+///
+/// This is the marker trait for structures representing the context of a bus specific device.
+pub trait DeviceContext: private::Sealed {}
+
+/// The [`Normal`] context is the context of a bus specific device when it is not an argument of
+/// any bus callback.
+pub struct Normal;
+
+/// The [`Core`] context is the context of a bus specific device when it is supplied as argument of
+/// any of the bus callbacks, such as `probe()`.
+pub struct Core;
+
+mod private {
+    pub trait Sealed {}
+
+    impl Sealed for super::Core {}
+    impl Sealed for super::Normal {}
+}
+
+impl DeviceContext for Core {}
+impl DeviceContext for Normal {}
+
 #[doc(hidden)]
 #[macro_export]
 macro_rules! dev_printk {
     ($method:ident, $dev:expr, $($f:tt)*) => {
         {
-            ($dev).$method(core::format_args!($($f)*));
+            ($dev).$method(::core::format_args!($($f)*));
         }
     }
 }
@@ -226,9 +252,10 @@ macro_rules! dev_printk {
 /// Equivalent to the kernel's `dev_emerg` macro.
 ///
 /// Mimics the interface of [`std::print!`]. More information about the syntax is available from
-/// [`core::fmt`] and `alloc::format!`.
+/// [`core::fmt`] and [`std::format!`].
 ///
 /// [`std::print!`]: https://doc.rust-lang.org/std/macro.print.html
+/// [`std::format!`]: https://doc.rust-lang.org/std/macro.format.html
 ///
 /// # Examples
 ///
@@ -251,9 +278,10 @@ macro_rules! dev_emerg {
 /// Equivalent to the kernel's `dev_alert` macro.
 ///
 /// Mimics the interface of [`std::print!`]. More information about the syntax is available from
-/// [`core::fmt`] and `alloc::format!`.
+/// [`core::fmt`] and [`std::format!`].
 ///
 /// [`std::print!`]: https://doc.rust-lang.org/std/macro.print.html
+/// [`std::format!`]: https://doc.rust-lang.org/std/macro.format.html
 ///
 /// # Examples
 ///
@@ -276,9 +304,10 @@ macro_rules! dev_alert {
 /// Equivalent to the kernel's `dev_crit` macro.
 ///
 /// Mimics the interface of [`std::print!`]. More information about the syntax is available from
-/// [`core::fmt`] and `alloc::format!`.
+/// [`core::fmt`] and [`std::format!`].
 ///
 /// [`std::print!`]: https://doc.rust-lang.org/std/macro.print.html
+/// [`std::format!`]: https://doc.rust-lang.org/std/macro.format.html
 ///
 /// # Examples
 ///
@@ -301,9 +330,10 @@ macro_rules! dev_crit {
 /// Equivalent to the kernel's `dev_err` macro.
 ///
 /// Mimics the interface of [`std::print!`]. More information about the syntax is available from
-/// [`core::fmt`] and `alloc::format!`.
+/// [`core::fmt`] and [`std::format!`].
 ///
 /// [`std::print!`]: https://doc.rust-lang.org/std/macro.print.html
+/// [`std::format!`]: https://doc.rust-lang.org/std/macro.format.html
 ///
 /// # Examples
 ///
@@ -326,9 +356,10 @@ macro_rules! dev_err {
 /// Equivalent to the kernel's `dev_warn` macro.
 ///
 /// Mimics the interface of [`std::print!`]. More information about the syntax is available from
-/// [`core::fmt`] and `alloc::format!`.
+/// [`core::fmt`] and [`std::format!`].
 ///
 /// [`std::print!`]: https://doc.rust-lang.org/std/macro.print.html
+/// [`std::format!`]: https://doc.rust-lang.org/std/macro.format.html
 ///
 /// # Examples
 ///
@@ -351,9 +382,10 @@ macro_rules! dev_warn {
 /// Equivalent to the kernel's `dev_notice` macro.
 ///
 /// Mimics the interface of [`std::print!`]. More information about the syntax is available from
-/// [`core::fmt`] and `alloc::format!`.
+/// [`core::fmt`] and [`std::format!`].
 ///
 /// [`std::print!`]: https://doc.rust-lang.org/std/macro.print.html
+/// [`std::format!`]: https://doc.rust-lang.org/std/macro.format.html
 ///
 /// # Examples
 ///
@@ -376,9 +408,10 @@ macro_rules! dev_notice {
 /// Equivalent to the kernel's `dev_info` macro.
 ///
 /// Mimics the interface of [`std::print!`]. More information about the syntax is available from
-/// [`core::fmt`] and `alloc::format!`.
+/// [`core::fmt`] and [`std::format!`].
 ///
 /// [`std::print!`]: https://doc.rust-lang.org/std/macro.print.html
+/// [`std::format!`]: https://doc.rust-lang.org/std/macro.format.html
 ///
 /// # Examples
 ///
@@ -401,9 +434,10 @@ macro_rules! dev_info {
 /// Equivalent to the kernel's `dev_dbg` macro, except that it doesn't support dynamic debug yet.
 ///
 /// Mimics the interface of [`std::print!`]. More information about the syntax is available from
-/// [`core::fmt`] and `alloc::format!`.
+/// [`core::fmt`] and [`std::format!`].
 ///
 /// [`std::print!`]: https://doc.rust-lang.org/std/macro.print.html
+/// [`std::format!`]: https://doc.rust-lang.org/std/macro.format.html
 ///
 /// # Examples
 ///
