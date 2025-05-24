@@ -10,7 +10,9 @@ use core::marker::PhantomData;
 use core::{mem, pin::Pin};
 
 use crate::alloc::AllocError;
+use crate::net_namespace::NetNamespace;
 use crate::prelude::GFP_KERNEL;
+use crate::types::ARef;
 use crate::{
     alloc::KBox,
     types::{ForeignOwnable, Opaque},
@@ -32,6 +34,7 @@ where
 impl<T: ForeignOwnable> PacketType<T> {
     /// Create a [`PacketType`] instance for a specified callback embedding some private data `T`
     pub unsafe fn new(
+        net_ns: Option<&ARef<NetNamespace>>,
         ether_type: u16,
         pkt_handler: unsafe extern "C" fn(
             skb: *mut sk_buff,
@@ -50,7 +53,15 @@ impl<T: ForeignOwnable> PacketType<T> {
         unsafe {
             (*pt).type_ = ether_type.to_be();
             (*pt).func = Some(pkt_handler);
-            (*pt).af_packet_priv = private.into_foreign();
+            if let Some(net_ns) = &net_ns {
+                // In the context of ETH_P_ALL it's necessary to either
+                // set the net namespace or to provide a dev for this
+                // packet type. Or we get a warn when trying to attach
+                // and the reason for it is that the dev subsystem hasn't
+                // been able to pick an appropriate ptype list for us.
+                (*pt).af_packet_net = net_ns.as_ptr();
+            }
+            (*pt).af_packet_priv = private.into_foreign().cast();
             dev_add_pack(pt);
         }
 
@@ -69,7 +80,7 @@ impl<T: ForeignOwnable> PacketType<T> {
     pub unsafe fn borrow_private<'a>(
         ptr: *const bindings::packet_type,
     ) -> <T as ForeignOwnable>::Borrowed<'a> {
-        unsafe { <T as ForeignOwnable>::borrow((*ptr).af_packet_priv) }
+        unsafe { <T as ForeignOwnable>::borrow((*ptr).af_packet_priv.cast()) }
     }
 
     /// A method for getting a mutable borrow to the private
@@ -81,7 +92,7 @@ impl<T: ForeignOwnable> PacketType<T> {
     pub unsafe fn borrow_private_mut<'a>(
         ptr: *const bindings::packet_type,
     ) -> <T as ForeignOwnable>::BorrowedMut<'a> {
-        unsafe { <T as ForeignOwnable>::borrow_mut((*ptr).af_packet_priv) }
+        unsafe { <T as ForeignOwnable>::borrow_mut((*ptr).af_packet_priv.cast()) }
     }
 }
 
@@ -93,7 +104,7 @@ impl<T: ForeignOwnable> Drop for PacketType<T> {
         unsafe {
             let private = (*pt).af_packet_priv;
             dev_remove_pack(pt);
-            let _priv: T = ForeignOwnable::from_foreign(private);
+            let _priv: T = ForeignOwnable::from_foreign(private.cast());
         }
     }
 }

@@ -71,7 +71,8 @@ impl kernel::Module for RustPlay {
         let private = PacketTypePrivateData::new(devs);
         let private = KBox::pin_init(private, GFP_ATOMIC | GFP_KERNEL)?;
 
-        let pt = unsafe { PacketType::new(ETH_P_ALL as u16, eth_rcv, private)? };
+        let pt =
+            unsafe { PacketType::new((&net_ns).as_ref(), ETH_P_ALL as u16, eth_rcv, private)? };
 
         Ok(RustPlay { _pt: pt })
     }
@@ -83,6 +84,7 @@ impl Drop for RustPlay {
     }
 }
 
+#[no_mangle]
 unsafe extern "C" fn eth_rcv(
     skb: *mut sk_buff,
     dev_in: *mut net_device,
