@@ -45,6 +45,7 @@
 #include <linux/jump_label.h>
 #include <linux/mdio.h>
 #include <linux/miscdevice.h>
+#include <linux/netdevice.h>
 #include <linux/of_device.h>
 #include <linux/pci.h>
 #include <linux/phy.h>

@@ -77,7 +77,13 @@ pub mod list;
 pub mod miscdevice;
 #[cfg(CONFIG_NET)]
 pub mod net;
+#[cfg(CONFIG_NET)]
+pub mod net_device;
+#[cfg(CONFIG_NET)]
+pub mod net_namespace;
 pub mod of;
+#[cfg(CONFIG_NET)]
+pub mod packet_type;
 pub mod page;
 #[cfg(CONFIG_PCI)]
 pub mod pci;
@@ -90,6 +96,7 @@ pub mod revocable;
 pub mod security;
 pub mod seq_file;
 pub mod sizes;
+pub mod sk_buff;
 mod static_assert;
 #[doc(hidden)]
 pub mod std_vendor;
