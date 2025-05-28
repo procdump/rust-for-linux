@@ -115,3 +115,34 @@ unsafe impl<T: ForeignOwnable> Send for PacketType<T> {}
 // SAFETY: It's OK to access `PacketType` through shared references from other threads because
 // we're either accessing properties that don't change or that are properly synchronised by C code.
 unsafe impl<T: ForeignOwnable> Sync for PacketType<T> {}
+
+/// A simple macro reducing boiler-plate when declaring the packet handler from the caller.
+#[macro_export]
+macro_rules! pkt_handler {
+    ($pkt_handler_fn_name:ident, $inner_fn:ident) => {
+        /// A packet handler signature that is fixed.
+        #[no_mangle]
+        pub unsafe extern "C" fn $pkt_handler_fn_name(
+            skb: *mut sk_buff,
+            dev_in: *mut net_device,
+            packet_type: *mut packet_type,
+            orig_dev: *mut net_device,
+        ) -> i32 {
+            assert!(!skb.is_null());
+            assert!(!dev_in.is_null());
+            assert!(!packet_type.is_null());
+            assert!(!orig_dev.is_null());
+
+            let skb = SkBuff::from_ptr(skb);
+            let dev_in = NetDevice::from_ptr(dev_in);
+            let orig_dev = NetDevice::from_ptr(orig_dev);
+            let private_data: Pin<&PacketTypePrivateData> =
+                PacketType::<Pin<KBox<PacketTypePrivateData>>>::borrow_private(packet_type);
+
+            match $inner_fn(skb, dev_in, private_data, orig_dev) {
+                Err(e) => e.to_errno(),
+                Ok(res) => res,
+            }
+        }
+    };
+}

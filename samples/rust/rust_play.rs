@@ -12,6 +12,7 @@ use kernel::{
     c_str, current_net_ns, net_device::NetDevice, packet_type::PacketType, prelude::*,
     str::CString, types::ARef,
 };
+use kernel::pkt_handler;
 
 module! {
     type: RustPlay,
@@ -84,31 +85,11 @@ impl Drop for RustPlay {
     }
 }
 
-#[no_mangle]
-unsafe extern "C" fn eth_rcv(
-    skb: *mut sk_buff,
-    dev_in: *mut net_device,
-    packet_type: *mut packet_type,
-    orig_dev: *mut net_device,
-) -> i32 {
-    assert!(!skb.is_null());
-    assert!(!dev_in.is_null());
-    assert!(!packet_type.is_null());
-    assert!(!orig_dev.is_null());
+// Declare and glue the packet handler function to the provided callback.
+pkt_handler!(eth_rcv, eth_rcv_inner);
 
-    let skb = unsafe { SkBuff::from_ptr(skb) };
-    let dev_in = unsafe { NetDevice::from_ptr(dev_in) };
-    let orig_dev = unsafe { NetDevice::from_ptr(orig_dev) };
-    let private_data: Pin<&PacketTypePrivateData> =
-        unsafe { PacketType::<Pin<KBox<PacketTypePrivateData>>>::borrow_private(packet_type) };
-
-    match eth_rcv_wrapper(skb, dev_in, private_data, orig_dev) {
-        Err(e) => e.to_errno(),
-        Ok(res) => res,
-    }
-}
-
-fn eth_rcv_wrapper(
+#[inline]
+fn eth_rcv_inner(
     skb: ARef<SkBuff<'_>>,
     dev_in: &NetDevice,
     private_data: Pin<&PacketTypePrivateData>,
